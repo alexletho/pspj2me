@@ -295,8 +295,15 @@ int launcher_run(char *outJar, int outLen) {
     snprintf(dir, sizeof dir, "%s/games", g_baseDir);
     mkdir(dir, 0777);
     scanDir(dir);
-    scanDir("ms0:/J2ME");
-    scanDir("ms0:/PSP/GAME/PSPJ2ME/games");
+    /* J2ME/ at the root of the same device we were started from (ms0: memory stick,
+       ef0: PSP Go internal storage), plus the memory stick on a PSP Go with a card inserted */
+    char dev[16] = "ms0:";
+    const char *colon = strchr(g_baseDir, ':');
+    if (colon && colon - g_baseDir < 12) snprintf(dev, sizeof dev, "%.*s", (int)(colon - g_baseDir + 1), g_baseDir);
+    char extra[64];
+    snprintf(extra, sizeof extra, "%s/J2ME", dev);
+    scanDir(extra);
+    if (strcmp(dev, "ms0:") != 0) { scanDir("ms0:/J2ME"); scanDir("ms0:/PSP/GAME/PSPJ2ME/games"); }
     qsort(games, nGames, sizeof(Game), cmpGames);
     int sel = 0, top = 0;
     char lastPath[600];
