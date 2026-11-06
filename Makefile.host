@@ -1,0 +1,30 @@
+# Host build (Linux) for testing the VM headlessly.
+CC ?= gcc
+CFLAGS ?= -O2 -g -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare -std=gnu99
+JAVAC ?= javac
+BUILD = build
+VM_SRC = $(wildcard src/vm/*.c)
+NAT_SRC = src/native/natives_lang.c $(MIDP_SRC)
+MIDP_SRC ?= src/native/natives_midp.c
+GFX_SRC = $(wildcard src/gfx/*.c) $(wildcard src/audio/*.c)
+SRC = $(VM_SRC) $(NAT_SRC) $(GFX_SRC) src/platform/plat_host.c src/main_host.c
+OBJ = $(patsubst src/%.c,$(BUILD)/host/%.o,$(SRC))
+
+all: $(BUILD)/j2me_host $(BUILD)/boot.jar
+
+$(BUILD)/host/%.o: src/%.c $(wildcard src/*/*.h)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/j2me_host: $(OBJ)
+	$(CC) $(CFLAGS) -o $@ $(OBJ) -lm
+
+CLASSLIB_SRC = $(shell find classlib/src -name '*.java')
+$(BUILD)/boot.jar: $(CLASSLIB_SRC)
+	rm -rf $(BUILD)/classes && mkdir -p $(BUILD)/classes
+	$(JAVAC) -nowarn -source 8 -target 8 -Xlint:-options -encoding UTF-8 -bootclasspath $(BUILD)/classes -d $(BUILD)/classes $(CLASSLIB_SRC)
+	cd $(BUILD)/classes && rm -f ../boot.jar && python3 ../../tools/mkjar.py ../boot.jar .
+
+clean:
+	rm -rf $(BUILD)
+.PHONY: all clean

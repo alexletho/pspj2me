@@ -1,0 +1,37 @@
+# PSP build (EBOOT.PBP) using pspsdk / pspdev.
+#   make -f Makefile.psp            (needs psp-gcc in PATH and build/boot.jar from the host build)
+TARGET = pspj2me
+B = build/psp
+
+SRCS = $(wildcard src/vm/*.c) src/native/natives_lang.c src/native/natives_midp.c \
+       $(wildcard src/gfx/*.c) $(wildcard src/audio/*.c) $(wildcard src/platform/psp/*.c)
+OBJS = $(patsubst src/%.c,$(B)/%.o,$(SRCS)) $(B)/bootjar.o
+
+VERSION := $(shell cat VERSION)
+CFLAGS = -DPSPJ2ME_VERSION='"$(VERSION)"' -O3 -G0 -Wall -Wno-unused-parameter -Wno-sign-compare -std=gnu99 -fno-strict-aliasing
+ASFLAGS = $(CFLAGS)
+LIBS = -lpspgu -lpspgum -lpspaudio -lpsprtc -lpsputility -lpsppower -lpspctrl -lpspdisplay -lm
+
+PSP_LARGE_MEMORY = 1
+EXTRA_TARGETS = EBOOT.PBP
+PSP_EBOOT_TITLE = PSPJ2ME $(VERSION) - J2ME emulator
+PSP_EBOOT_ICON = assets/ICON0.PNG
+BUILD_PRX = 1
+
+PSPSDK = $(shell psp-config --pspsdk-path)
+include $(PSPSDK)/lib/build.mak
+
+$(B)/%.o: src/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(addprefix -I,$(PSPSDK)/include) -c $< -o $@
+
+$(B)/bootjar.c: build/boot.jar tools/bin2c.py
+	@mkdir -p $(B)
+	python3 tools/bin2c.py build/boot.jar $@ g_bootJar
+
+$(B)/bootjar.o: $(B)/bootjar.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+.PHONY: clean-sfo
+clean-sfo:
+	@rm -f PARAM.SFO EBOOT.PBP

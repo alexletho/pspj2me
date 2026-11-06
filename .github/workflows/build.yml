@@ -1,0 +1,48 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install PSP toolchain (pspdev)
+        run: |
+          curl -sSL -o "$RUNNER_TEMP/pspdev.tar.gz" https://github.com/pspdev/pspdev/releases/download/latest/pspdev-ubuntu-latest-x86_64.tar.gz
+          tar -xzf "$RUNNER_TEMP/pspdev.tar.gz" -C "$RUNNER_TEMP"
+          echo "PSPDEV=$RUNNER_TEMP/pspdev" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/pspdev/bin" >> "$GITHUB_PATH"
+
+      - name: Host build and tests
+        run: make test
+
+      - name: Build EBOOT.PBP and release package
+        run: make dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PSPJ2ME
+          path: |
+            PSPJ2ME-*.zip
+            EBOOT.PBP
+
+      - name: Attach files to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" PSPJ2ME-*.zip EBOOT.PBP --clobber
