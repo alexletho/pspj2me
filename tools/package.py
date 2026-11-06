@@ -23,4 +23,6 @@ with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
                "Copy your J2ME games (.jar, optionally with a matching .jad) into this folder.\r\n")
     for name in ("README.md", "LICENSE", "THIRD_PARTY.md"):
         z.write(os.path.join(root, name), name)
+    for name in sorted(os.listdir(os.path.join(root, "licenses"))):
+        z.write(os.path.join(root, "licenses", name), "licenses/" + name)
 print(f"Built {os.path.basename(out)}")

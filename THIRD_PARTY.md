@@ -52,8 +52,29 @@ Inc., respectively. For further information, contact: fonts at gnome dot
 org.
 ```
 
-## Build-time dependencies (not included in this repository)
+## puff (DEFLATE decoder)
 
-* [pspdev / pspsdk](https://github.com/pspdev/pspdev): PSP toolchain and SDK (BSD-style licenses),
-  linked into `EBOOT.PBP` together with newlib.
-* [PPSSPP](https://github.com/hrydgard/ppsspp): used only for automated testing (GPL-2.0+); not linked.
+`src/vm/zip.c` contains an altered DEFLATE decoder modeled on **puff.c** by Mark Adler
+(Copyright (C) 2002-2013 Mark Adler, zlib license). Full notice: [licenses/puff-zlib-LICENSE.txt](licenses/puff-zlib-LICENSE.txt).
+
+## Libraries linked into EBOOT.PBP
+
+The PSP binary is built with the [pspdev](https://github.com/pspdev/pspdev) toolchain and links:
+
+* **pspsdk**: Copyright (c) 2005 adresd, Marcus R. Brown, James Forshaw, John Kelley,
+  Jesper Svennevid. BSD license: [licenses/pspsdk-LICENSE.txt](licenses/pspsdk-LICENSE.txt).
+* **newlib** (C library): various permissive licenses, see
+  [licenses/newlib-COPYING.NEWLIB.txt](licenses/newlib-COPYING.NEWLIB.txt).
+* **libgcc**: GCC Runtime Library Exception (no notice requirements for the binary).
+
+These license files are also included in every release zip.
+
+## Testing only (not linked, not distributed)
+
+* [PPSSPP](https://github.com/hrydgard/ppsspp) (GPL-2.0+): runs the EBOOT in automated tests.
+
+## No Sony or Oracle code
+
+PSPJ2ME contains no code, firmware, keys or other material from Sony, Oracle/Sun or Nokia. The
+Java class library is an independent implementation of the published J2ME API specifications.
+The PSP build uses only the community-developed, open-source pspsdk.

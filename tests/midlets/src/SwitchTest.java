@@ -2,7 +2,7 @@ import javax.microedition.midlet.*;
 import javax.microedition.lcdui.*;
 
 /* paint() waits (sleeping, holding the canvas lock) until showNotify() ran, and setCurrent is
-   called from a game thread: must not deadlock (regression for Heroes Lore). */
+   called from a game thread: must not deadlock (regression test). */
 public class SwitchTest extends MIDlet {
     protected void startApp() {
         final Display d = Display.getDisplay(this);

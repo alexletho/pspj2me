@@ -1,4 +1,8 @@
-/* Minimal ZIP reader + DEFLATE decoder (canonical-Huffman, puff-style). */
+/* Minimal ZIP reader + DEFLATE decoder.
+ *
+ * The DEFLATE decoder is an altered version modeled on puff.c,
+ * Copyright (C) 2002-2013 Mark Adler (zlib license, see licenses/puff-zlib-LICENSE.txt).
+ * This is not the original puff.c: the code was re-implemented and a ZIP reader was added. */
 #include "zip.h"
 #include <stdlib.h>
 #include <string.h>

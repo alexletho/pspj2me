@@ -17,6 +17,8 @@ EXTRA_TARGETS = EBOOT.PBP
 PSP_EBOOT_TITLE = PSPJ2ME $(VERSION) - J2ME emulator
 PSP_EBOOT_ICON = assets/ICON0.PNG
 BUILD_PRX = 1
+# our own disc ID (pspsdk's default is a real commercial product code)
+SFOFLAGS = -s DISC_ID=PSJM00001
 
 PSPSDK = $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
