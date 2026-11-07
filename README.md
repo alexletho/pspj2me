@@ -151,5 +151,6 @@ PSPJ2ME is free software: you can redistribute it and/or modify it under the ter
 derived from DejaVu Sans; see [THIRD_PARTY.md](THIRD_PARTY.md).
 
 PSPJ2ME is an independent project. It is not affiliated with, or endorsed by, Oracle, Sony,
-Nokia or any game publisher. "Java" is a trademark of Oracle and/or its affiliates;
+Nokia or any game publisher. "Java", "J2ME" and "Java ME" are trademarks of Oracle and/or its
+affiliates and are used here only to describe compatibility;
 "PSP" and "PlayStation" are trademarks of Sony Interactive Entertainment. No games are included.
