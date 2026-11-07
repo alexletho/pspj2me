@@ -13,8 +13,7 @@
 enum { SCALE_FIT = 0, SCALE_STRETCH, SCALE_COUNT };
 
 /* PSP buttons we map (index into Settings.keys) */
-enum { B_UP = 0, B_DOWN, B_LEFT, B_RIGHT, B_CROSS, B_CIRCLE, B_SQUARE, B_TRIANGLE, B_L, B_R, B_SELECT, B_START,
-       B_ANALOG_UP, B_ANALOG_DOWN, B_ANALOG_LEFT, B_ANALOG_RIGHT, B_COUNT };
+#include "../keymap.h"   /* B_* button indices */
 
 typedef struct {
     int screenW, screenH;
@@ -25,7 +24,8 @@ typedef struct {
     int keys[B_COUNT];
     int cpu333;
     int fullCanvas;
-    int sleepScale;   /* % of the time Thread.sleep really sleeps (100 = normal) */   /* report the whole screen to every Canvas (no soft-key strip) */
+    int sleepScale;
+    int shoulderCombos; /* L/R act as shift buttons for extra keys */   /* % of the time Thread.sleep really sleeps (100 = normal) */   /* report the whole screen to every Canvas (no soft-key strip) */
 } Settings;
 
 extern Settings g_settings;

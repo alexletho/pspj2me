@@ -16,5 +16,7 @@ for M in GfxTest GameTest UiTest SerialTest SwitchTest SoundTest; do
   if grep -q "Uncaught exception\|FATAL\|missing native\|PAINT BEFORE" shots/$M.log; then echo "$M: FAILED"; cat shots/$M.log; exit 1; fi
   echo "$M: ok ($(grep -c . shots/$M.log) log lines)"
 done
+gcc -Wall -o build/keymap_test tests/keymap/keymap_test.c src/platform/keymap.c -Isrc/platform
+./build/keymap_test | tail -1
 rm -rf "$DATA"
 echo "all host tests passed"

@@ -28,7 +28,7 @@ get ~40 MB of memory for games, PSP-1000 ~10 MB). No games are included; use gam
 
 ## Controls
 
-Default layout (change it per game: **Triangle** on the game in the list):
+Default layout. Every phone key is reachable; change it per game with **△** on the game in the list.
 
 | PSP                     | Phone key                            |
 |-------------------------|--------------------------------------|
@@ -36,13 +36,25 @@ Default layout (change it per game: **Triangle** on the game in the list):
 | D-pad                   | 2 / 8 / 4 / 6                        |
 | ✕ Cross / ○ Circle      | 5 / 0                                |
 | □ Square / △ Triangle   | * / #                                |
-| L / R                   | 1 / 3                                |
 | SELECT / START          | Left / right soft key                |
+| tap L / tap R           | 1 / 3                                |
 | **START + SELECT**      | PSPJ2ME menu                         |
 
-The **PSPJ2ME menu** (START + SELECT together) lets you send any phone key (7, 9, Fire, …), see
-the controls of the current game, change the display mode, smoothing, FPS counter and VSync,
-or exit back to the game list.
+**Shoulder combos:** hold L or R and press another button:
+
+| Hold L + …   | Key        | Hold R + …   | Key        |
+|--------------|------------|--------------|------------|
+| D-pad up     | 1          | D-pad up     | 3          |
+| D-pad down   | 7          | D-pad down   | 9          |
+| ✕            | Fire (OK)  | ✕            | Fire (OK)  |
+| ○            | Clear (C)  | ○            | Clear (C)  |
+
+A tap of L or R alone sends 1 or 3 when you release it. For the rare game that needs 1 or 3
+*held down*, turn **Shoulder combos** off in that game's settings: L and R then act instantly.
+
+The **PSPJ2ME menu** (START + SELECT together) lets you send any phone key, see the controls of
+the current game, change the display mode, smoothing, FPS counter and VSync, or exit back to the
+game list.
 
 <p align="center"><img src="docs/controls.png" alt="Controls panel" width="400"></p>
 
@@ -59,6 +71,7 @@ or exit back to the game list.
   (x1.3 / x2 / x3) for a higher frame rate. In games that advance a fixed step per frame, this
   also makes the game itself run faster.
 * **Show FPS** and **VSync**.
+* **Shoulder combos** on/off (see Controls).
 * **Button mapping** for every PSP button, with "reset to defaults".
 
 Settings are stored per game in `PSP/GAME/PSPJ2ME/data/`; game saves (RMS) are kept in

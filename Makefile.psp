@@ -4,7 +4,7 @@ TARGET = pspj2me
 B = build/psp
 
 SRCS = $(wildcard src/vm/*.c) src/native/natives_lang.c src/native/natives_midp.c \
-       $(wildcard src/gfx/*.c) $(wildcard src/audio/*.c) $(wildcard src/platform/psp/*.c)
+       $(wildcard src/gfx/*.c) $(wildcard src/audio/*.c) $(wildcard src/platform/psp/*.c) src/platform/keymap.c
 OBJS = $(patsubst src/%.c,$(B)/%.o,$(SRCS)) $(B)/bootjar.o
 
 VERSION := $(shell cat VERSION)
@@ -23,7 +23,7 @@ SFOFLAGS = -s DISC_ID=PSJM00001
 PSPSDK = $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
 
-$(B)/%.o: src/%.c
+$(B)/%.o: src/%.c VERSION
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(addprefix -I,$(PSPSDK)/include) -c $< -o $@
 

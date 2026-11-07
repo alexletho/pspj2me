@@ -223,7 +223,7 @@ static int settingsScreen(Game *g) {
     Settings st = g_settings;
     settings_load(&st, cfg);
     int sel = 0, top = 0;
-    enum { S_SIZE = 0, S_SPEED, S_SCALE, S_FILTER, S_FPS, S_VSYNC, S_KEYS };
+    enum { S_SIZE = 0, S_SPEED, S_SHOULDERS, S_SCALE, S_FILTER, S_FPS, S_VSYNC, S_KEYS };
     int nItems = S_KEYS + B_COUNT + 1; /* + reset */
     Surface s;
     ui_surface(&s, canvas);
@@ -246,6 +246,7 @@ static int settingsScreen(Game *g) {
             else if (sel == S_FILTER) st.filter ^= 1;
             else if (sel == S_FPS) st.showFps ^= 1;
             else if (sel == S_VSYNC) st.vsync ^= 1;
+            else if (sel == S_SHOULDERS) st.shoulderCombos ^= 1;
             else if (sel == S_SPEED) {
                 static const int steps[] = { 100, 75, 50, 35 };
                 int cur = 0;
@@ -275,6 +276,8 @@ static int settingsScreen(Game *g) {
             else if (i == S_FILTER) snprintf(line, sizeof line, "Smooth scaling:  %s", st.filter ? "On" : "Off");
             else if (i == S_FPS) snprintf(line, sizeof line, "Show FPS:  %s", st.showFps ? "On" : "Off");
             else if (i == S_VSYNC) snprintf(line, sizeof line, "VSync:  %s", st.vsync ? "On" : "Off");
+            else if (i == S_SHOULDERS) snprintf(line, sizeof line, "Shoulder combos (hold L/R for 1 3 7 9 Fire Clear):  %s",
+                                                 st.shoulderCombos ? "On" : "Off");
             else if (i == S_SPEED) snprintf(line, sizeof line, "Speed-up (shorter game sleeps):  < %s >",
                                              st.sleepScale >= 100 ? "Off" : st.sleepScale == 75 ? "x1.3" : st.sleepScale == 50 ? "x2" : "x3");
             else if (i < S_KEYS + B_COUNT) snprintf(line, sizeof line, "Button %s  ->  < %s >", button_name(i - S_KEYS), key_name(st.keys[i - S_KEYS]));

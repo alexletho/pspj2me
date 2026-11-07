@@ -16,3 +16,4 @@ tests/vmtest/vmtest.jar
 PSPJ2ME.zip
 PSPJ2ME*.zip
 out/
+tests/keymap/keymap_test

@@ -140,6 +140,7 @@ void settings_defaults(Settings *s) {
     s->cpu333 = 1;
     s->fullCanvas = 1;
     s->sleepScale = 100;
+    s->shoulderCombos = 1;
     /* D-pad = 2/4/6/8, stick = arrows, SELECT/START = soft keys, X=5, O=0, Square=*, Triangle=#, L=1, R=3 */
     s->keys[B_UP] = '2'; s->keys[B_DOWN] = '8'; s->keys[B_LEFT] = '4'; s->keys[B_RIGHT] = '6';
     s->keys[B_CROSS] = '5'; s->keys[B_CIRCLE] = '0'; s->keys[B_SQUARE] = '*'; s->keys[B_TRIANGLE] = '#';
@@ -190,6 +191,7 @@ void settings_load(Settings *s, const char *path) {
         else if (!strcmp(k, "cpu333")) s->cpu333 = atoi(v);
         else if (!strcmp(k, "fullcanvas")) s->fullCanvas = atoi(v);
         else if (!strcmp(k, "sleepscale")) s->sleepScale = atoi(v);
+        else if (!strcmp(k, "shoulders")) s->shoulderCombos = atoi(v);
         else if (!strcmp(k, "keyver")) keyVer = atoi(v);
         else if (!strncmp(k, "key.", 4)) {
             for (int b = 0; b < B_COUNT; b++) if (!strcmp(k + 4, btnKeys[b])) { keys[b] = atoi(v); haveKeys = 1; }
@@ -207,7 +209,7 @@ void settings_load(Settings *s, const char *path) {
 void settings_save(const Settings *s, const char *path) {
     FILE *f = fopen(path, "w");
     if (!f) return;
-    fprintf(f, "keyver=2\nscreen=%dx%d\nscale=%d\nfilter=%d\nfps=%d\nvsync=%d\ncpu333=%d\nfullcanvas=%d\nsleepscale=%d\n", s->screenW, s->screenH, s->scale, s->filter, s->showFps, s->vsync, s->cpu333, s->fullCanvas, s->sleepScale);
+    fprintf(f, "keyver=2\nscreen=%dx%d\nscale=%d\nfilter=%d\nfps=%d\nvsync=%d\ncpu333=%d\nfullcanvas=%d\nsleepscale=%d\nshoulders=%d\n", s->screenW, s->screenH, s->scale, s->filter, s->showFps, s->vsync, s->cpu333, s->fullCanvas, s->sleepScale, s->shoulderCombos);
     for (int b = 0; b < B_COUNT; b++) fprintf(f, "key.%s=%d\n", btnKeys[b], s->keys[b]);
     fclose(f);
 }
@@ -499,23 +501,42 @@ int ui_text_width(const char *utf8, int size, int bold) {
 
 /* ---------------- controls panel ---------------- */
 void draw_controls(Surface *s, const Settings *st, const char *title) {
-    int w = 440, h = 248, x = (SCR_W - w) / 2, y = (SCR_H - h) / 2;
+    int w = 460, h = 260, x = (SCR_W - w) / 2, y = (SCR_H - h) / 2;
     gfx_fill_rect(s, x, y, w, h, 0xf0182030);
     gfx_rect(s, x, y, w - 1, h - 1, 0xff6080c0, 0);
-    ui_text(s, x + 12, y + 6, title, 0xffffffff, 1, 1);
+    ui_text(s, x + 12, y + 5, title, 0xffffffff, 1, 1);
     static const int order[] = { B_ANALOG_UP, B_ANALOG_DOWN, B_ANALOG_LEFT, B_ANALOG_RIGHT, B_UP, B_DOWN, B_LEFT, B_RIGHT,
                                  B_CROSS, B_CIRCLE, B_SQUARE, B_TRIANGLE, B_L, B_R, B_SELECT, B_START };
     int n = (int)(sizeof order / sizeof order[0]);
-    char line[96];
+    char line[128];
     for (int i = 0; i < n; i++) {
         int col = i / 8, row = i % 8;
-        int lx = x + 14 + col * 214, ly = y + 30 + row * 21;
-        ui_text(s, lx, ly, button_name(order[i]), 0xffb0c4e8, 1, 0);
+        int lx = x + 14 + col * 224, ly = y + 26 + row * 17;
+        const char *bn = button_name(order[i]);
+        if (st->shoulderCombos && order[i] == B_L) bn = "L (tap)";
+        if (st->shoulderCombos && order[i] == B_R) bn = "R (tap)";
+        ui_text(s, lx, ly, bn, 0xffb0c4e8, 0, 0);
         snprintf(line, sizeof line, "%s", key_name(st->keys[order[i]]));
-        ui_text(s, lx + 100, ly, line, 0xffffffff, 1, 1);
+        ui_text(s, lx + 96, ly, line, 0xffffffff, 0, 1);
     }
-    ui_text(s, x + 14, y + h - 40, "START + SELECT together: PSPJ2ME menu (send any key, display, exit)", 0xffffd060, 0, 0);
-    ui_text(s, x + 14, y + h - 22, "Change keys: Triangle on the game in the game list.   Press any button to close.", 0xffb0b0b0, 0, 0);
+    int cy = y + 26 + 8 * 17 + 6;
+    gfx_line(s, x + 10, cy - 3, x + w - 11, cy - 3, 0xff405070, 0);
+    if (st->shoulderCombos) {
+        /* key_name() returns a shared buffer: copy each name before formatting */
+        char kn[2][KM_COMBO_KEYS][16], l1[96], l2[96];
+        for (int k = 0; k < KM_COMBO_KEYS; k++) {
+            snprintf(kn[0][k], 16, "%s", key_name(km_comboL[k]));
+            snprintf(kn[1][k], 16, "%s", key_name(km_comboR[k]));
+        }
+        snprintf(l1, sizeof l1, "Hold L:  D-pad up = %s   D-pad down = %s   X = %s   O = %s", kn[0][0], kn[0][1], kn[0][2], kn[0][3]);
+        snprintf(l2, sizeof l2, "Hold R:  D-pad up = %s   D-pad down = %s   X = %s   O = %s", kn[1][0], kn[1][1], kn[1][2], kn[1][3]);
+        ui_text(s, x + 14, cy, l1, 0xffffffff, 0, 0);
+        ui_text(s, x + 14, cy + 16, l2, 0xffffffff, 0, 0);
+    } else {
+        ui_text(s, x + 14, cy, "Shoulder combos are off for this game: L and R are plain keys.", 0xffffffff, 0, 0);
+    }
+    ui_text(s, x + 14, y + h - 38, "START + SELECT together: PSPJ2ME menu (send any key, display, exit)", 0xffffd060, 0, 0);
+    ui_text(s, x + 14, y + h - 21, "Change keys: Triangle on the game in the game list.  Press any button to close.", 0xffb0b0b0, 0, 0);
 }
 
 /* ---------------- in-game overlay menu ---------------- */
@@ -721,6 +742,7 @@ static void testTick(void) {
         char p[700];
         snprintf(p, sizeof p, "%s/shot_%d.ppm", g_baseDir, tShots[tShotPos]);
         if (lastFrame) { savePPM(p, lastFrame, lastW, lastH); vm_log("[test] saved %s (%dx%d)\n", p, lastW, lastH); }
+        gpuFinish();   /* show the last submitted frame before capturing */
         sceIoDevctl("kemulator:", 0x20, NULL, 0, NULL, 0); /* PPSSPP: capture the real display */
         tShotPos++;
     }
@@ -729,15 +751,14 @@ static void testTick(void) {
 
 /* ---------------- input ---------------- */
 static unsigned prevButtons;
-static int heldCode[B_COUNT];
+static KeyMap g_km;
+static void postKey(int type, int code) { midp_post_key(type, code); }
 
 static const unsigned btnMask[B_COUNT] = {
     PSP_CTRL_UP, PSP_CTRL_DOWN, PSP_CTRL_LEFT, PSP_CTRL_RIGHT, PSP_CTRL_CROSS, PSP_CTRL_CIRCLE, PSP_CTRL_SQUARE,
     PSP_CTRL_TRIANGLE, PSP_CTRL_LTRIGGER, PSP_CTRL_RTRIGGER, PSP_CTRL_SELECT, PSP_CTRL_START, 0, 0, 0, 0 };
 
-static void releaseAll(void) {
-    for (int b = 0; b < B_COUNT; b++) if (heldCode[b]) { midp_post_key(KEY_RELEASE, heldCode[b]); heldCode[b] = 0; }
-}
+static void releaseAll(void) { keymap_release_all(&g_km, postKey); }
 
 #define COMBO (PSP_CTRL_START | PSP_CTRL_SELECT)
 static int64_t softPendingSince;   /* START/SELECT press waiting to see if it becomes the menu combo */
@@ -786,12 +807,9 @@ void plat_poll(void) {
     state[B_ANALOG_DOWN] = pad.Ly > 215;
     state[B_ANALOG_LEFT] = pad.Lx < 40;
     state[B_ANALOG_RIGHT] = pad.Lx > 215;
-    for (int i = 0; i < B_COUNT; i++) {
-        int code = g_settings.keys[i];
-        if (holdSoft && (i == B_START || i == B_SELECT) && state[i] && !heldCode[i]) continue;
-        if (state[i] && !heldCode[i] && code) { heldCode[i] = code; midp_post_key(KEY_PRESS, code); }
-        else if (!state[i] && heldCode[i]) { midp_post_key(KEY_RELEASE, heldCode[i]); heldCode[i] = 0; }
-    }
+    int suppress[B_COUNT] = { 0 };
+    suppress[B_START] = suppress[B_SELECT] = holdSoft;
+    keymap_update(&g_km, g_settings.keys, g_settings.shoulderCombos, state, suppress, now, postKey);
 }
 
 void plat_present(const uint32_t *argb, int w, int h, int stride) {
@@ -942,9 +960,9 @@ int main(int argc, char **argv) {
         extern int g_sleepScale;
         if (g_settings.sleepScale < 10 || g_settings.sleepScale > 100) g_settings.sleepScale = 100;
         g_sleepScale = g_settings.sleepScale;
-        vm_log("settings: screen %dx%d, display %s, filter %s, vsync %s, speed-up sleep %d%%\n",
+        vm_log("settings: screen %dx%d, display %s, filter %s, vsync %s, speed-up sleep %d%%, shoulder combos %s\n",
                g_settings.screenW, g_settings.screenH, scale_name(g_settings.scale), g_settings.filter ? "on" : "off",
-               g_settings.vsync ? "on" : "off", g_settings.sleepScale);
+               g_settings.vsync ? "on" : "off", g_settings.sleepScale, g_settings.shoulderCombos ? "on" : "off");
         extern int g_perfLog;
         g_perfLog = g_settings.showFps;
 
@@ -982,7 +1000,7 @@ int main(int argc, char **argv) {
         menuOpen = 0;
         javaOverlay = 0;
         pendingRelease = 0;
-        memset(heldCode, 0, sizeof heldCode);
+        memset(&g_km, 0, sizeof g_km);
         prevButtons = 0xffffffff;
         comboLatched = 0;
         softPendingSince = 0;
