@@ -1,0 +1,48 @@
+name: Game works
+description: Tell us a game runs well, for the compatibility list
+title: "[Works] <game name>"
+labels: ["compatibility report"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks! Working reports build the compatibility list. Don't attach or link the game file.
+  - type: input
+    id: game
+    attributes:
+      label: Game name and jar file name
+      placeholder: "e.g. Diamond Rush (Gameloft), Diamond_Rush_240x320.jar"
+    validations:
+      required: true
+  - type: dropdown
+    id: rating
+    attributes:
+      label: How well does it run?
+      options:
+        - Perfect
+        - Playable (small issues)
+        - Starts but not playable
+    validations:
+      required: true
+  - type: input
+    id: settings
+    attributes:
+      label: Recommended settings
+      description: Phone screen size, display mode, speed-up, special key mapping.
+      placeholder: "e.g. 240x320, Fit, Speed-up x1.3"
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Any small issues (sound, speed, controls). FPS if you turned on Show FPS.
+  - type: dropdown
+    id: model
+    attributes:
+      label: PSP model
+      options: [PSP-1000, PSP-2000, PSP-3000, PSP Go (N1000), PSP Street (E1000), PPSSPP (emulator)]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: PSPJ2ME version
+      placeholder: "e.g. 1.0"

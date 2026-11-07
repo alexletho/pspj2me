@@ -89,7 +89,8 @@ slower than on the original phone.
 PSPJ2ME writes `PSP/GAME/PSPJ2ME/pspj2me.log` on every start; the previous run is kept as
 `pspj2me.prev.log` (each capped at 256 KB). It lists the games launched, their settings, missing
 classes, Java exceptions, and a thread dump if a game stops drawing. **When reporting a problem,
-please open an issue with the game name and attach both log files.** Enable **Show FPS** for a game
+please [open an issue](https://github.com/alexletho/pspj2me/issues/new/choose) using the "Game doesn't
+work" form and attach both log files.** Games that work well can be reported with the "Game works" form. Enable **Show FPS** for a game
 to also log performance details.
 
 * *Game list is empty:* the `.jar` files must be directly inside `PSP/GAME/PSPJ2ME/games/`

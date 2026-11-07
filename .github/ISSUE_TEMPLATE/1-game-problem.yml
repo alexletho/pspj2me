@@ -1,0 +1,120 @@
+name: Game doesn't work
+description: A game doesn't start, freezes, crashes, looks wrong, has no sound or wrong controls
+title: "[Game] <game name>: <short description>"
+labels: ["game problem"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! The two log files are the most useful part of a report, so please attach them.
+        **Never attach or link the game file itself** (.jar): games are copyrighted. The game's name is enough.
+
+  - type: input
+    id: game
+    attributes:
+      label: Game name
+      description: As shown in the PSPJ2ME game list, plus the publisher if you know it.
+      placeholder: "e.g. Doom RPG (id Software / EA Mobile)"
+    validations:
+      required: true
+
+  - type: input
+    id: jarname
+    attributes:
+      label: Jar file name
+      description: The file name helps identify the exact version (screen size, phone model, language).
+      placeholder: "e.g. DoomRPG_SE_240x320.jar"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: problem
+    attributes:
+      label: What happens?
+      options:
+        - Doesn't start / goes back to the game list
+        - Black screen
+        - Freezes (the PSP stops responding)
+        - Crashes or the PSP turns off
+        - Graphics look wrong
+        - Text is cut off or the screen is cut off
+        - No sound or wrong sound
+        - Buttons don't work as expected
+        - Too slow
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: What did you do, what did you expect, what happened instead? When does it happen (start, menu, a level, after some time)?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: model
+    attributes:
+      label: PSP model
+      options:
+        - PSP-1000
+        - PSP-2000
+        - PSP-3000
+        - PSP Go (N1000)
+        - PSP Street (E1000)
+        - PPSSPP (emulator)
+    validations:
+      required: true
+
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware / custom firmware
+      description: "XMB: Settings → System Settings → System Information, plus your CFW or HEN name."
+      placeholder: "e.g. 6.61 PRO-C2, 6.61 ARK-4, 6.60 LME"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: PSPJ2ME version
+      description: Shown at the top of the game list.
+      placeholder: "e.g. 1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: settings
+    attributes:
+      label: Game settings
+      description: Phone screen size, display mode and speed-up for this game (Triangle in the game list).
+      placeholder: "e.g. 240x320, Fit, Speed-up Off"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log files
+      description: |
+        Copy **both** files from `PSP/GAME/PSPJ2ME/` on the memory stick and drag them into this box:
+        `pspj2me.log` and `pspj2me.prev.log`. The log is rewritten each time PSPJ2ME starts, so copy
+        them right after the problem, before starting PSPJ2ME again.
+      placeholder: Drag pspj2me.log and pspj2me.prev.log here
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Photo or screenshot (optional)
+      description: For graphics problems, a photo of the PSP screen helps a lot.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I did not attach or link the game file (.jar/.jad).
+          required: true
+        - label: I tried another phone screen size for this game (Triangle in the game list), if the problem is graphics or a cut-off screen.
