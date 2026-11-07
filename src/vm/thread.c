@@ -177,6 +177,7 @@ int64_t g_perfGfxUs, g_perfPresentUs, g_perfGcUs;
 uint32_t g_perfFrames;
 static int64_t perfRunUs, perfIdleUs, perfStart;
 int g_perfLog;
+volatile int64_t g_perfAudioUs;   /* time the platform's audio thread spent mixing/decoding */
 
 void scheduler_run(void) {
     Thread *last = NULL;
@@ -243,10 +244,15 @@ void scheduler_run(void) {
         if (a - perfStart >= 10000000) {
             int64_t total = a - perfStart;
             int64_t gameUs = perfRunUs - g_perfGfxUs - g_perfPresentUs - g_perfGcUs;
-            if (g_perfLog) vm_log("perf: %.1f fps | game code %d%%, drawing %d%%, screen output %d%%, GC %d%%, idle %d%%\n",
+            int64_t audioUs = g_perfAudioUs;
+            if (audioUs > gameUs) audioUs = gameUs;   /* the audio thread preempts game slices */
+            gameUs -= audioUs;
+            if (g_perfLog) vm_log("perf: %.1f fps | game code %d%%, drawing %d%%, screen output %d%%, GC %d%%, sound %d%%, idle %d%%\n",
                    g_perfFrames * 1e6 / (double)total, (int)(gameUs * 100 / total), (int)(g_perfGfxUs * 100 / total),
-                   (int)(g_perfPresentUs * 100 / total), (int)(g_perfGcUs * 100 / total), (int)(perfIdleUs * 100 / total));
+                   (int)(g_perfPresentUs * 100 / total), (int)(g_perfGcUs * 100 / total), (int)(audioUs * 100 / total),
+                   (int)(perfIdleUs * 100 / total));
             perfStart = a; perfRunUs = perfIdleUs = 0; g_perfGfxUs = g_perfPresentUs = g_perfGcUs = 0; g_perfFrames = 0;
+            g_perfAudioUs = 0;
         }
     }
 }

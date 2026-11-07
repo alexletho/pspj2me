@@ -38,7 +38,8 @@ int main(int argc, char **argv) {
                             "tests/midlets/res/tiles.png", "tests/jpeg/a420.jpg", "tests/jpeg/a444.jpg", "tests/jpeg/gray.jpg",
                             "tests/midlets/jars/GameTest.jar", "tests/audio/beep.wav", "tests/audio/rich.mid",
                             "tests/fuzz/seeds/tone.seq", "tests/fuzz/seeds/adpcm.wav",
-                            "tests/fuzz/seeds/nokia.ota", "tests/midlets/res/half.wav", NULL };
+                            "tests/fuzz/seeds/nokia.ota", "tests/midlets/res/half.wav", "tests/fuzz/seeds/clip.mp3",
+                            "tests/fuzz/seeds/low.amr", "tests/midlets/res/voice.amr", NULL };
     mix_init(NULL, NULL);
     int16_t abuf[2048];
     for (int fi = 0; files[fi]; fi++) {

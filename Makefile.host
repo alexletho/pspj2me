@@ -8,13 +8,21 @@ NAT_SRC = src/native/natives_lang.c $(MIDP_SRC)
 MIDP_SRC ?= src/native/natives_midp.c
 GFX_SRC = $(wildcard src/gfx/*.c) $(wildcard src/audio/*.c)
 SRC = $(VM_SRC) $(NAT_SRC) $(GFX_SRC) src/platform/plat_host.c src/main_host.c
-OBJ = $(patsubst src/%.c,$(BUILD)/host/%.o,$(SRC))
+AMR_OBJDIR = $(BUILD)/host
+include src/audio/third_party/amr.mk
+OBJ = $(patsubst src/%.c,$(BUILD)/host/%.o,$(SRC)) $(AMR_OBJ)
 
 all: $(BUILD)/j2me_host $(BUILD)/boot.jar
 
 $(BUILD)/host/%.o: src/%.c $(wildcard src/*/*.h)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/host/audio/amr.o: CFLAGS += $(AMR_INC)
+
+$(BUILD)/host/%.o: src/%.cpp
+	@mkdir -p $(dir $@)
+	$(CC) -O2 $(AMR_CFLAGS) -c $< -o $@
 
 $(BUILD)/j2me_host: $(OBJ)
 	$(CC) $(CFLAGS) -o $@ $(OBJ) -lm

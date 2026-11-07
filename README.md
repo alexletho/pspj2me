@@ -87,7 +87,8 @@ Supported:
   (text entry uses the PSP's on-screen keyboard), record stores (saves)
 * Nokia UI API (`FullCanvas`, `DirectGraphics`, `DirectUtils`, `Sound`)
 * PNG and baseline JPEG images
-* Sound via MMAPI: **MIDI music** (built-in synthesizer), **WAV** (PCM and IMA ADPCM), tone sequences;
+* Sound via MMAPI: **MIDI music** (built-in synthesizer), **MP3**, **AMR** (narrowband),
+  **WAV** (PCM and IMA ADPCM), tone sequences;
   pause/resume, seeking, looping, stop times, volume, tempo/rate and pitch, `MIDIControl` and the
   `device://midi` / `device://tone` players
 * Nokia `Sound`: WAV, Nokia ringtones (`FORMAT_TONE`) and beeps
@@ -95,8 +96,7 @@ Supported:
 
 Not supported (yet):
 
-* MP3 / AMR audio (games continue silently; games that ask which formats are supported are told
-  MIDI and WAV, so most pick those instead)
+* AMR-WB (wideband) and Yamaha SMAF (.mmf) audio, video playback (games continue silently)
 * 3D games (M3G / JSR-184), Bluetooth, networking (games see "no connection")
 * Vendor-specific APIs other than Nokia (Siemens, Samsung, Motorola, …)
 
@@ -147,7 +147,7 @@ src/vm/        Java VM: class loader, interpreter (threaded dispatch + quickenin
                mark-sweep GC, green threads and monitors, zip reader
 src/native/    java.lang natives; MIDP natives (graphics, images, fonts, events, RMS, launch)
 src/gfx/       software rasterizer, PNG and JPEG decoders, bitmap fonts
-src/audio/     mixer: WAV, MIDI wavetable synthesizer, tone sequences
+src/audio/     mixer: WAV, MIDI wavetable synthesizer, tone sequences, MP3 (minimp3), AMR (opencore-amr)
 src/platform/  PSP layer (GU video, input, game list, on-screen keyboard, audio) and Linux host layer
 classlib/src/  the Java class library (CLDC, MIDP, Nokia UI), compiled into the EBOOT
 tests/         VM test suite, test MIDlets, audio/JPEG tests
@@ -157,7 +157,8 @@ tests/         VM test suite, test MIDlets, audio/JPEG tests
 
 PSPJ2ME is free software: you can redistribute it and/or modify it under the terms of the
 **GNU General Public License v3.0 or later**. See [LICENSE](LICENSE). The built-in font is
-derived from DejaVu Sans; see [THIRD_PARTY.md](THIRD_PARTY.md).
+derived from DejaVu Sans; MP3 and AMR decoding use minimp3 (public domain) and opencore-amr
+(Apache 2.0); see [THIRD_PARTY.md](THIRD_PARTY.md).
 
 PSPJ2ME is an independent project. It is not affiliated with, or endorsed by, Oracle, Sony,
 Nokia or any game publisher. "Java", "J2ME" and "Java ME" are trademarks of Oracle and/or its

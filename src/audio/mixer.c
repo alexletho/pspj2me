@@ -1,6 +1,8 @@
 /* Portable audio mixer: WAV (PCM / IMA ADPCM), Standard MIDI files via a small
  * software synthesizer, and J2ME tone sequences. Rendering is driven by the platform. */
 #include "mixer.h"
+#include "mp3.h"
+#include "amr.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -717,7 +719,7 @@ done:
  * side then simply loads the sound again. */
 #define NCHAN 48
 #define MIX_BYTES_BUDGET (6 * 1024 * 1024)
-enum { CH_FREE, CH_PCM, CH_SYNTH, CH_TONE };
+enum { CH_FREE, CH_PCM, CH_SYNTH, CH_TONE, CH_STREAM };
 typedef struct {
     int handle;
     int type;
@@ -738,6 +740,12 @@ typedef struct {
     uint64_t pos;        /* 48.16 fixed-point frame position */
     /* CH_SYNTH */
     Synth *synth;
+    /* CH_STREAM (MP3): decoded one MP3 frame at a time into sb; sb[0] holds the last
+       sample of the previous frame so interpolation runs across frame boundaries */
+    Mp3Stream *mp3;
+    int16_t *sb;
+    int sbLen;
+    int64_t sbase;       /* source frame of sb[1] */
     /* CH_TONE */
     int toneLeft;
     uint32_t tonePhase, toneInc;
@@ -755,6 +763,8 @@ void mix_init(void (*lock)(void), void (*unlock)(void)) {
 
 static void freeChn(Chn *c) {
     free(c->pcm);
+    free(c->sb);
+    if (c->mp3) mp3_close(c->mp3);
     if (c->synth) { free(c->synth->midi->ev); free(c->synth->midi); free(c->synth); }
     memset(c, 0, sizeof *c);
 }
@@ -823,31 +833,47 @@ static Synth *newSynth(Midi *midi, int device) {
     return syn;
 }
 
-/* decodes or parses a sound; returns a stopped channel's handle or -1 */
-static int loadLocked(const uint8_t *data, int len, int nokiaTone) {
-    int frames, ch, rate;
-    int16_t *pcm = nokiaTone ? NULL : decodeWav(data, len, &frames, &ch, &rate);
-    if (pcm) {
-        Chn *c = newChn(CH_PCM, (size_t)frames * ch * 2);
-        if (!c) { free(pcm); return -1; }
-        c->pcm = pcm; c->frames = frames; c->chans = ch; c->rate = rate;
-        return c->handle;
-    }
-    Midi *midi = nokiaTone ? parseNokiaOta(data, len) : parseMidi(data, len);
-    if (!midi && !nokiaTone) midi = parseToneSeq(data, len);
-    if (!midi) return -1;
-    Synth *syn = newSynth(midi, 0);
-    Chn *c = syn ? newChn(CH_SYNTH, sizeof(Synth) + (size_t)midi->nEv * sizeof(MEv)) : NULL;
-    if (!c) { free(syn); free(midi->ev); free(midi); return -1; }
-    c->synth = syn;
-    return c->handle;
-}
-
+/* decodes or parses a sound (without the lock: long files must not stall the audio thread),
+ * then attaches it to a stopped channel; returns its handle or -1 */
 int mix_load(const uint8_t *data, int len, int nokiaTone) {
     initTables();
+    int frames = 0, ch = 1, rate = 8000;
+    int16_t *pcm = NULL;
+    Midi *midi = NULL;
+    Mp3Stream *mp3 = NULL;
+    if (nokiaTone) midi = parseNokiaOta(data, len);
+    else if ((pcm = decodeWav(data, len, &frames, &ch, &rate)) != NULL) {}
+    else if ((midi = parseMidi(data, len)) != NULL || (midi = parseToneSeq(data, len)) != NULL) {}
+    else if ((pcm = amr_decode(data, len, &frames)) != NULL) { ch = 1; rate = 8000; }
+    else mp3 = mp3_open(data, len);
+    if (pcm && frames <= 0) { free(pcm); return -1; }
+    Synth *syn = midi ? newSynth(midi, 0) : NULL;
+    int16_t *sb = mp3 ? malloc((MP3_MAX_FRAMES + 1) * 2 * sizeof(int16_t)) : NULL;
+    int h = -1;
     lockFn();
-    int h = loadLocked(data, len, nokiaTone);
+    Chn *c = NULL;
+    if (pcm) {
+        c = newChn(CH_PCM, (size_t)frames * ch * 2);
+        if (c) { c->pcm = pcm; c->frames = frames; c->chans = ch; c->rate = rate; pcm = NULL; }
+    } else if (syn) {
+        c = newChn(CH_SYNTH, sizeof(Synth) + (size_t)midi->nEv * sizeof(MEv));
+        if (c) { c->synth = syn; syn = NULL; midi = NULL; }
+    } else if (mp3 && sb) {
+        c = newChn(CH_STREAM, mp3_bytes(mp3));
+        if (c) {
+            c->mp3 = mp3; c->sb = sb; mp3 = NULL; sb = NULL;
+            c->rate = mp3_rate(c->mp3); c->chans = mp3_channels(c->mp3);
+            c->sb[0] = c->sb[1] = 0; c->sbLen = 1; c->sbase = 0; c->pos = 1 << 16;
+        }
+    }
+    if (c) h = c->handle;
     unlockFn();
+    /* whatever wasn't attached */
+    free(pcm);
+    free(sb);
+    if (mp3) mp3_close(mp3);
+    if (syn) free(syn);
+    if (midi) { free(midi->ev); free(midi); }
     return h;
 }
 
@@ -890,9 +916,21 @@ int mix_load_midi_device(void) {
     return h;
 }
 
+/* positions a stream at source frame f */
+static void streamSeek(Chn *c, int64_t f) {
+    int64_t total = mp3_total_frames(c->mp3);
+    if (f > total) f = total;
+    int64_t start = mp3_seek(c->mp3, f);
+    c->sbLen = 1;
+    c->sb[0] = c->sb[1] = 0;
+    c->sbase = start;
+    c->pos = (uint64_t)(1 + (f - start)) << 16;
+}
+
 static void rewindChn(Chn *c) {
     c->pos = 0;
     if (c->synth) synthReset(c->synth);
+    if (c->mp3) streamSeek(c, 0);
     c->atEnd = 0;
 }
 
@@ -956,8 +994,15 @@ int mix_loops_done(int h) {
     return r;
 }
 
+static int64_t streamFrame(Chn *c) {
+    int64_t f = c->sbase + (int64_t)(c->pos >> 16) - 1;
+    int64_t total = mp3_total_frames(c->mp3);
+    return f < 0 ? 0 : f > total ? total : f;
+}
+
 static int64_t timeUs(Chn *c) {
     if (c->type == CH_PCM) return (int64_t)((c->pos >> 16) * 1000000ULL / (uint64_t)c->rate);
+    if (c->type == CH_STREAM) return streamFrame(c) * 1000000 / c->rate;
     if (c->type == CH_SYNTH) {
         double t = c->synth->songUs;
         if (!c->synth->device && t > c->synth->midi->durationUs) t = c->synth->midi->durationUs;
@@ -979,6 +1024,7 @@ int64_t mix_duration_us(int h) {
     Chn *c = findChn(h);
     int64_t r = -1;
     if (c && c->type == CH_PCM) r = (int64_t)c->frames * 1000000 / c->rate;
+    else if (c && c->type == CH_STREAM) r = mp3_total_frames(c->mp3) * 1000000 / c->rate;
     else if (c && c->type == CH_SYNTH && !c->synth->device) r = c->synth->midi->durationUs;
     unlockFn();
     return r;
@@ -994,6 +1040,8 @@ int64_t mix_seek_us(int h, int64_t us) {
             uint64_t f = (uint64_t)us * (uint64_t)c->rate / 1000000ULL;
             if (f > (uint64_t)c->frames) f = c->frames;
             c->pos = f << 16;
+        } else if (c->type == CH_STREAM) {
+            streamSeek(c, (int64_t)((uint64_t)us * (uint64_t)c->rate / 1000000ULL));
         } else if (c->type == CH_SYNTH && !c->synth->device) {
             double d = c->synth->midi->durationUs;
             synthSeek(c->synth, us > d ? d : (double)us);
@@ -1139,6 +1187,47 @@ static void renderPcm(Chn *c, int32_t *acc, int frames) {
     }
 }
 
+/* decodes the next MP3 frame into sb, keeping the last sample in sb[0]; 0 at the end */
+static int streamRefill(Chn *c) {
+    static int16_t tmp[MP3_MAX_FRAMES * 2];
+    int n = mp3_read(c->mp3, tmp);
+    if (n <= 0) return 0;
+    int ch = c->chans;
+    memcpy(c->sb, c->sb + (c->sbLen - 1) * ch, ch * sizeof(int16_t));
+    c->pos -= (uint64_t)(c->sbLen - 1) << 16;
+    c->sbase += c->sbLen - 1;
+    memcpy(c->sb + ch, tmp, (size_t)n * ch * sizeof(int16_t));
+    c->sbLen = n + 1;
+    return 1;
+}
+
+static void renderStream(Chn *c, int32_t *acc, int frames) {
+    uint64_t step = ((uint64_t)c->rate << 16) * (uint64_t)c->rateMilli / ((uint64_t)MIX_RATE * 100000);
+    if (step == 0) step = 1;
+    int64_t stopFrame = c->stopAtUs >= 0 ? (int64_t)(c->stopAtUs * c->rate / 1000000.0) : INT64_MAX;
+    int vol = c->volume;
+    for (int f = 0; f < frames; f++) {
+        if (streamFrame(c) >= stopFrame) { c->playing = 0; c->stoppedAtTime = 1; c->stopAtUs = -1; return; }
+        uint64_t i = c->pos >> 16;
+        while (i + 1 >= (uint64_t)c->sbLen) {
+            if (!streamRefill(c)) {
+                if (!endReached(c)) return;
+                streamSeek(c, 0);
+            }
+            i = c->pos >> 16;
+        }
+        int frac = (int)(c->pos & 0xffff) >> 1;
+        int l, r;
+        if (c->chans == 2) {
+            l = c->sb[i * 2] + ((c->sb[i * 2 + 2] - c->sb[i * 2]) * frac >> 15);
+            r = c->sb[i * 2 + 1] + ((c->sb[i * 2 + 3] - c->sb[i * 2 + 1]) * frac >> 15);
+        } else l = r = c->sb[i] + ((c->sb[i + 1] - c->sb[i]) * frac >> 15);
+        acc[f * 2] += l * vol / 100;
+        acc[f * 2 + 1] += r * vol / 100;
+        c->pos += step;
+    }
+}
+
 void mix_render(int16_t *out, int frames) {
     static int32_t *acc;
     static int accCap;
@@ -1186,6 +1275,8 @@ void mix_render(int16_t *out, int frames) {
             continue;
         } else if (c->type == CH_PCM) {
             renderPcm(c, acc, frames);
+        } else if (c->type == CH_STREAM) {
+            renderStream(c, acc, frames);
         } else if (c->type == CH_TONE) {
             int n = frames < c->toneLeft ? frames : c->toneLeft;
             for (int f = 0; f < n; f++) {

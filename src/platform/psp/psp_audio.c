@@ -22,7 +22,12 @@ static int audioThread(SceSize args, void *argp) {
     int cur = 0;
     while (running) {
         if (g_audioMute) memset(buffers[cur], 0, sizeof buffers[cur]);
-        else mix_render(buffers[cur], SAMPLES);
+        else {
+            extern volatile int64_t g_perfAudioUs;
+            SceUInt32 t0 = sceKernelGetSystemTimeLow();
+            mix_render(buffers[cur], SAMPLES);
+            g_perfAudioUs += (SceUInt32)(sceKernelGetSystemTimeLow() - t0);
+        }
         sceAudioOutputPannedBlocking(channel, PSP_AUDIO_VOLUME_MAX, PSP_AUDIO_VOLUME_MAX, buffers[cur]);
         cur ^= 1;
     }

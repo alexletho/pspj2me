@@ -50,8 +50,7 @@ for J in tests/robustness/jars/*.jar; do
 done
 echo "robustness: $(ls tests/robustness/jars/*.jar | wc -l) broken/misbehaving games handled"
 # short fuzz pass over the decoders (sanitizers when the compiler has them)
-FZ="tests/fuzz/fuzz.c src/gfx/png.c src/gfx/jpeg.c src/vm/zip.c src/audio/mixer.c -lm"
-gcc -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -std=gnu99 -o build/fuzz $FZ 2>/dev/null || gcc -O1 -std=gnu99 -o build/fuzz $FZ
+sh tests/fuzz/build.sh
 ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 timeout 600 ./build/fuzz 300 > build/fuzz.log 2>&1 || { tail -30 build/fuzz.log; echo "fuzz FAILED"; exit 1; }
 tail -1 build/fuzz.log
 rm -rf "$DATA"

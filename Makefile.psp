@@ -5,7 +5,9 @@ B = build/psp
 
 SRCS = $(wildcard src/vm/*.c) src/native/natives_lang.c src/native/natives_midp.c \
        $(wildcard src/gfx/*.c) $(wildcard src/audio/*.c) $(wildcard src/platform/psp/*.c) src/platform/keymap.c
-OBJS = $(patsubst src/%.c,$(B)/%.o,$(SRCS)) $(B)/bootjar.o
+AMR_OBJDIR = $(B)
+include src/audio/third_party/amr.mk
+OBJS = $(patsubst src/%.c,$(B)/%.o,$(SRCS)) $(AMR_OBJ) $(B)/bootjar.o
 
 VERSION := $(shell cat VERSION)
 CFLAGS = -DPSPJ2ME_VERSION='"$(VERSION)"' -O3 -G0 -Wall -Wno-unused-parameter -Wno-sign-compare -std=gnu99 -fno-strict-aliasing
@@ -26,6 +28,12 @@ include $(PSPSDK)/lib/build.mak
 $(B)/%.o: src/%.c VERSION
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(addprefix -I,$(PSPSDK)/include) -c $< -o $@
+
+$(B)/audio/amr.o: CFLAGS += $(AMR_INC)
+
+$(B)/%.o: src/%.cpp
+	@mkdir -p $(dir $@)
+	$(CC) -O2 -G0 $(AMR_CFLAGS) $(addprefix -I,$(PSPSDK)/include) -c $< -o $@
 
 $(B)/bootjar.c: build/boot.jar tools/bin2c.py
 	@mkdir -p $(B)

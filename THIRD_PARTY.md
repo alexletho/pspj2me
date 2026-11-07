@@ -57,6 +57,22 @@ org.
 `src/vm/zip.c` contains an altered DEFLATE decoder modeled on **puff.c** by Mark Adler
 (Copyright (C) 2002-2013 Mark Adler, zlib license). Full notice: [licenses/puff-zlib-LICENSE.txt](licenses/puff-zlib-LICENSE.txt).
 
+## minimp3 (MP3 decoder)
+
+`src/audio/third_party/minimp3/minimp3.h` is [minimp3](https://github.com/lieff/minimp3) by
+lieff, dedicated to the public domain under CC0 1.0: [licenses/minimp3-CC0.txt](licenses/minimp3-CC0.txt).
+
+## opencore-amr (AMR-NB decoder)
+
+`src/audio/third_party/opencore-amr/` contains the AMR narrowband decoder of
+[opencore-amr](https://sourceforge.net/projects/opencore-amr/) (from Android's OpenCORE),
+Copyright (C) 1998-2009 PacketVideo and others, licensed under the Apache License 2.0:
+[licenses/opencore-amr-LICENSE-Apache-2.0.txt](licenses/opencore-amr-LICENSE-Apache-2.0.txt),
+with its NOTICE file: [licenses/opencore-amr-NOTICE.txt](licenses/opencore-amr-NOTICE.txt).
+The files are unmodified; only the decoder subset is included. The upstream patent disclaimer is
+reproduced in [licenses/opencore-amr-patent_disclaimer.txt](licenses/opencore-amr-patent_disclaimer.txt).
+The Apache License 2.0 is compatible with PSPJ2ME's GPL-3.0-or-later.
+
 ## Libraries linked into EBOOT.PBP
 
 The PSP binary is built with the [pspdev](https://github.com/pspdev/pspdev) toolchain and links:

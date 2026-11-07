@@ -9,8 +9,9 @@ public final class Manager {
     public static final String TONE_DEVICE_LOCATOR = "device://tone";
     public static final String MIDI_DEVICE_LOCATOR = "device://midi";
     private static final TimeBase SYSTEM_TB = new TimeBase() { public long getTime() { return System.currentTimeMillis() * 1000L; } };
-    /* only formats that actually play: games that check this pick MIDI or WAV instead of silence */
-    private static final String[] TYPES = { "audio/x-wav", "audio/wav", "audio/midi", "audio/mid", "audio/x-midi", "audio/sp-midi", "audio/x-tone-seq" };
+    /* only formats that actually play */
+    private static final String[] TYPES = { "audio/x-wav", "audio/wav", "audio/midi", "audio/mid", "audio/x-midi", "audio/sp-midi",
+        "audio/x-tone-seq", "audio/mpeg", "audio/mp3", "audio/x-mp3", "audio/amr" };
     private Manager() {}
 
     public static String[] getSupportedContentTypes(String protocol) {

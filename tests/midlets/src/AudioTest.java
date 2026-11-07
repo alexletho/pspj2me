@@ -32,6 +32,11 @@ public class AudioTest extends MIDlet implements Runnable {
         synchronized (events) { for (int i = 0; i < events.size(); i++) if (ev.equals(events.elementAt(i))) n++; }
         return n;
     }
+    /* waits up to ms for the n-th `ev` event (slow machines deliver late) */
+    private void waitFor(String ev, int n, int ms) {
+        for (int t = 0; t < ms && count(ev) < n; t += 50) sleep(50);
+        sleep(150);   /* and a little longer, to catch extra events */
+    }
     private static void sleep(int ms) { try { Thread.sleep(ms); } catch (InterruptedException e) {} }
     private Player res(String name, String type) throws Exception {
         return Manager.createPlayer(getClass().getResourceAsStream(name), type);
@@ -44,6 +49,7 @@ public class AudioTest extends MIDlet implements Runnable {
             devices();
             nokia();
             eviction();
+            compressed();
             unsupported();
         } catch (Throwable t) {
             failures++;
@@ -70,13 +76,13 @@ public class AudioTest extends MIDlet implements Runnable {
         p.start();
         sleep(100);
         check(p.getMediaTime() > t1, "resumes from where it stopped");
-        sleep(500);
+        waitFor(PlayerListener.END_OF_MEDIA, 1, 1500);
         check(count(PlayerListener.END_OF_MEDIA) == 1 && p.getState() == Player.PREFETCHED, "END_OF_MEDIA, back to PREFETCHED");
         events.removeAllElements();
         p.setLoopCount(3);
         p.setMediaTime(0);
         p.start();
-        sleep(1800);
+        waitFor(PlayerListener.END_OF_MEDIA, 3, 5400);
         check(count(PlayerListener.END_OF_MEDIA) == 3, "3 loops -> 3 END_OF_MEDIA (" + count(PlayerListener.END_OF_MEDIA) + ")");
         events.removeAllElements();
         p.setLoopCount(1);
@@ -84,7 +90,7 @@ public class AudioTest extends MIDlet implements Runnable {
         check(s > 240000 && s < 260000, "seek to 250 ms: " + s);
         ((StopTimeControl) p.getControl("StopTimeControl")).setStopTime(350000);
         p.start();
-        sleep(300);
+        waitFor(PlayerListener.STOPPED_AT_TIME, 1, 900);
         check(count(PlayerListener.STOPPED_AT_TIME) == 1, "STOPPED_AT_TIME");
         long ts = p.getMediaTime();
         check(ts >= 345000 && ts < 380000, "stopped at 350 ms: " + ts);
@@ -147,7 +153,7 @@ public class AudioTest extends MIDlet implements Runnable {
         byte[] tune = { ToneControl.VERSION, 1, ToneControl.TEMPO, 60, 60, 8, 62, 8, 64, 8 };
         tc.setSequence(tune);
         t.start();
-        sleep(1200);
+        waitFor(PlayerListener.END_OF_MEDIA, 1, 3600);
         check(count(PlayerListener.END_OF_MEDIA) == 1, "tone sequence plays to the end");
         t.close();
         Manager.playTone(72, 100, 50);
@@ -162,7 +168,7 @@ public class AudioTest extends MIDlet implements Runnable {
         });
         s.play(1);
         check(s.getState() == com.nokia.mid.sound.Sound.SOUND_PLAYING, "Nokia ringtone plays");
-        sleep(3500);
+        for (int i = 0; i < 80 && nokiaState != com.nokia.mid.sound.Sound.SOUND_STOPPED; i++) sleep(100);   /* tune is 3.3 s */
         check(nokiaState == com.nokia.mid.sound.Sound.SOUND_STOPPED && s.getState() == com.nokia.mid.sound.Sound.SOUND_STOPPED,
               "Nokia ringtone ends with SOUND_STOPPED (" + nokiaState + ")");
         com.nokia.mid.sound.Sound b = new com.nokia.mid.sound.Sound(880, 150);
@@ -184,9 +190,41 @@ public class AudioTest extends MIDlet implements Runnable {
         events.removeAllElements();
         ps[0].addPlayerListener(recorder);
         ps[0].start();
-        sleep(600);
+        waitFor(PlayerListener.END_OF_MEDIA, 1, 1800);
         check(count(PlayerListener.END_OF_MEDIA) == 1, "evicted player plays again");
         for (int i = 0; i < ps.length; i++) ps[i].close();
+    }
+
+    private void compressed() throws Exception {
+        events.removeAllElements();
+        Player p = res("/clip.mp3", "audio/mpeg");
+        p.addPlayerListener(recorder);
+        p.realize();
+        long d = p.getDuration();
+        check(d > 990000 && d < 1010000, "MP3 duration (gapless) " + d);
+        p.start();
+        sleep(300);
+        p.stop();
+        long t = p.getMediaTime();
+        check(t > 200000 && t < 450000, "MP3 time after 300 ms: " + t);
+        long s = p.setMediaTime(700000);
+        check(s > 690000 && s < 710000, "MP3 seek: " + s);
+        p.setLoopCount(2);
+        p.start();
+        waitFor(PlayerListener.END_OF_MEDIA, 2, 5100);
+        check(count(PlayerListener.END_OF_MEDIA) == 2 && p.getState() == Player.PREFETCHED, "MP3 loops to the end (" + count(PlayerListener.END_OF_MEDIA) + ")");
+        p.close();
+
+        events.removeAllElements();
+        Player a = res("/voice.amr", "audio/amr");
+        a.addPlayerListener(recorder);
+        a.realize();
+        long ad = a.getDuration();
+        check(ad == 1500000, "AMR duration " + ad);
+        a.start();
+        waitFor(PlayerListener.END_OF_MEDIA, 1, 5400);
+        check(count(PlayerListener.END_OF_MEDIA) == 1, "AMR plays to the end");
+        a.close();
     }
 
     private void unsupported() throws Exception {
@@ -196,11 +234,11 @@ public class AudioTest extends MIDlet implements Runnable {
         Player p = Manager.createPlayer(new java.io.ByteArrayInputStream(junk), "audio/mpeg");
         p.addPlayerListener(recorder);
         p.start();
-        sleep(1300);
+        waitFor(PlayerListener.END_OF_MEDIA, 1, 3900);
         check(count(PlayerListener.END_OF_MEDIA) == 1, "unsupported data: silent, but END_OF_MEDIA arrives");
         String[] types = Manager.getSupportedContentTypes(null);
         boolean mp3 = false;
         for (int i = 0; i < types.length; i++) if (types[i].equals("audio/mpeg")) mp3 = true;
-        check(!mp3, "MP3 not advertised while it can't play");
+        check(mp3, "MP3 is advertised");
     }
 }
