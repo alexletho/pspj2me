@@ -37,7 +37,7 @@ Default layout. Every phone key is reachable; change it per game with **△** on
 | ✕ Cross / ○ Circle      | 5 / 0                                |
 | □ Square / △ Triangle   | * / #                                |
 | SELECT / START          | Left / right soft key                |
-| tap L / tap R           | 1 / 3                                |
+| L / R                   | shift buttons (see combos below)     |
 | **START + SELECT**      | PSPJ2ME menu                         |
 
 **Shoulder combos:** hold L or R and press another button:
@@ -49,8 +49,9 @@ Default layout. Every phone key is reachable; change it per game with **△** on
 | ✕            | Fire (OK)  | ✕            | Fire (OK)  |
 | ○            | Clear (C)  | ○            | Clear (C)  |
 
-A tap of L or R alone sends 1 or 3 when you release it. For the rare game that needs 1 or 3
-*held down*, turn **Shoulder combos** off in that game's settings: L and R then act instantly.
+L and R alone send nothing: they pick the left or right column of the keypad, and D-pad up/down
+picks the top or bottom row (1 3 / 7 9). If you prefer L and R as plain keys (1 and 3), turn
+**Shoulder combos** off in that game's settings.
 
 The **PSPJ2ME menu** (START + SELECT together) lets you send any phone key, see the controls of
 the current game, change the display mode, smoothing, FPS counter and VSync, or exit back to the

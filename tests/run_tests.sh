@@ -17,6 +17,7 @@ for M in GfxTest GameTest UiTest SerialTest SwitchTest SoundTest; do
   echo "$M: ok ($(grep -c . shots/$M.log) log lines)"
 done
 gcc -Wall -o build/keymap_test tests/keymap/keymap_test.c src/platform/keymap.c -Isrc/platform
-./build/keymap_test | tail -1
+./build/keymap_test > build/keymap_test.log || { cat build/keymap_test.log; echo "keymap test FAILED"; exit 1; }
+tail -1 build/keymap_test.log
 rm -rf "$DATA"
 echo "all host tests passed"

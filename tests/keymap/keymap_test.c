@@ -36,15 +36,14 @@ int main(void) {
     reset(); st[B_UP] = 1; step(); st[B_UP] = 0; step();
     expect("D-pad up = 2", "+2 -2 ");
 
-    reset(); st[B_L] = 1; step(); expect("L press sends nothing yet", "");
-    st[B_L] = 0; step(); expect("L tap sends 1 on release", "+1 ");
-    t += 100; step(); expect("...and releases it shortly after", "-1 ");
+    reset(); st[B_L] = 1; step(); st[B_L] = 0; step(); t += 100; step();
+    expect("L alone sends nothing", "");
 
     reset(); st[B_R] = 1; step(); st[B_R] = 0; step(); t += 100; step();
-    expect("R tap = 3", "+3 -3 ");
+    expect("R alone sends nothing", "");
 
     reset(); st[B_L] = 1; step(); st[B_UP] = 1; step(); st[B_UP] = 0; step(); st[B_L] = 0; step(); t += 100; step();
-    expect("L+Up = 1, no extra tap", "+1 -1 ");
+    expect("L+Up = 1", "+1 -1 ");
 
     reset(); st[B_L] = 1; step(); st[B_DOWN] = 1; step(); st[B_DOWN] = 0; st[B_L] = 0; step(); t += 100; step();
     expect("L+Down = 7", "+7 -7 ");
@@ -59,13 +58,13 @@ int main(void) {
     expect("R+X = Fire", "+-5 --5 ");
 
     reset(); st[B_L] = 1; step(); st[B_LEFT] = 1; step(); st[B_LEFT] = 0; step(); st[B_L] = 0; step(); t += 100; step();
-    expect("L+Left = 4 (no combo), no tap of 1", "+4 -4 ");
+    expect("L+Left = 4 (no combo)", "+4 -4 ");
 
     reset(); st[B_L] = 1; step(); st[B_UP] = 1; step(); st[B_L] = 0; step(); st[B_UP] = 0; step(); t += 100; step();
     expect("release L before Up: 1 released correctly", "+1 -1 ");
 
     reset(); st[B_UP] = 1; step(); st[B_L] = 1; step(); st[B_UP] = 0; step(); st[B_L] = 0; step(); t += 100; step();
-    expect("Up held before L stays 2; L then taps 1", "+2 -2 +1 -1 ");
+    expect("Up held before L stays 2", "+2 -2 ");
 
     reset(); st[B_L] = 1; st[B_R] = 1; step(); st[B_UP] = 1; step(); st[B_UP] = 0; st[B_L] = 0; st[B_R] = 0; step(); t += 100; step();
     expect("L+R+Up: L wins = 1", "+1 -1 ");
@@ -76,8 +75,9 @@ int main(void) {
     reset(); st[B_L] = 1; stepNoShoulders(); st[B_L] = 0; stepNoShoulders();
     expect("combos off: L = 1 immediately", "+1 -1 ");
 
-    reset(); st[B_L] = 1; step(); keymap_release_all(&km, post); log_[0] = 0; st[B_L] = 0; step(); t += 100; step();
-    expect("L held across the menu doesn't tap afterwards", "");
+    reset(); st[B_L] = 1; step(); st[B_UP] = 1; step(); keymap_release_all(&km, post); expect("menu opens: held 1 is released", "+1 -1 ");
+    st[B_UP] = 0; st[B_L] = 0; step(); t += 100; step();
+    expect("nothing extra after the menu", "");
 
     printf(fails ? "%d FAILED\n" : "all keymap tests passed\n", fails);
     return fails != 0;

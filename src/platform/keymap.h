@@ -16,14 +16,13 @@ extern const int km_comboL[KM_COMBO_KEYS], km_comboR[KM_COMBO_KEYS];
 typedef struct {
     int heldCode[B_COUNT];   /* key code currently held down for each input (0 = none) */
     int lDown, rDown;        /* shoulder held (shift mode) */
-    int lUsed, rUsed;        /* shoulder was used for a combo while held */
-    struct { int code; int64_t at; } pend[8];   /* scheduled key releases (taps) */
+    struct { int code; int64_t at; } pend[8];   /* scheduled key releases (unused, kept for future taps) */
 } KeyMap;
 
 typedef void (*KeyPostFn)(int type, int code);   /* type: 1 press, 2 release */
 
 /* state[i] = 1 if input i is down. suppressPress[i] = 1 to delay a new press of input i.
- * keys[] = per-input key codes (L/R entries are their tap keys when shoulders is on). */
+ * keys[] = per-input key codes (L/R entries are used only when shoulders is off). */
 void keymap_update(KeyMap *km, const int *keys, int shoulders, const int *state, const int *suppressPress,
                    int64_t nowMs, KeyPostFn post);
 void keymap_release_all(KeyMap *km, KeyPostFn post);

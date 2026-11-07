@@ -513,10 +513,9 @@ void draw_controls(Surface *s, const Settings *st, const char *title) {
         int col = i / 8, row = i % 8;
         int lx = x + 14 + col * 224, ly = y + 26 + row * 17;
         const char *bn = button_name(order[i]);
-        if (st->shoulderCombos && order[i] == B_L) bn = "L (tap)";
-        if (st->shoulderCombos && order[i] == B_R) bn = "R (tap)";
         ui_text(s, lx, ly, bn, 0xffb0c4e8, 0, 0);
-        snprintf(line, sizeof line, "%s", key_name(st->keys[order[i]]));
+        if (st->shoulderCombos && (order[i] == B_L || order[i] == B_R)) snprintf(line, sizeof line, "shift (hold)");
+        else snprintf(line, sizeof line, "%s", key_name(st->keys[order[i]]));
         ui_text(s, lx + 96, ly, line, 0xffffffff, 0, 1);
     }
     int cy = y + 26 + 8 * 17 + 6;
