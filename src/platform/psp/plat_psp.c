@@ -29,6 +29,8 @@ int midp_load_descriptor(const char *jarPath);
 
 Settings g_settings;
 static int menuOpen, showControls;
+static int showStopped, stoppedShown;   /* "the game stopped working" screen */
+static int64_t lastKeyPressMs, keyAfterProblemMs;
 static void drawMenu(void);
 char g_baseDir[512];
 static char dataDir[600];
@@ -544,6 +546,30 @@ void draw_controls(Surface *s, const Settings *st, const char *title) {
     ui_text(s, x + 14, y + h - 21, "Change keys: Triangle on the game in the game list.  Press any button to close.", 0xffb0b0b0, 0, 0);
 }
 
+/* word-wraps msg into the box; returns the next y */
+int ui_text_wrapped(Surface *s, int x, int y, int w, const char *msg, uint32_t color) {
+    char line[200];
+    const char *p = msg;
+    while (*p) {
+        int n = 0, lastSpace = -1;
+        while (p[n] && n < (int)sizeof line - 1) {
+            line[n] = p[n];
+            line[n + 1] = 0;
+            if (ui_text_width(line, 0, 0) > w) break;
+            if (p[n] == ' ') lastSpace = n;
+            n++;
+        }
+        if (p[n] && lastSpace > 0) n = lastSpace;
+        if (n == 0) n = 1;
+        snprintf(line, sizeof line, "%.*s", n, p);
+        ui_text(s, x, y, line, color, 0, 0);
+        y += 16;
+        p += n;
+        while (*p == ' ') p++;
+    }
+    return y;
+}
+
 /* ---------------- in-game overlay menu ---------------- */
 static int menuSel;
 static int keypadSel;
@@ -578,6 +604,17 @@ static void drawMenu(void) {
     int mw = 300, mh = 30 + MI_COUNT * 22 + 8, mx = (SCR_W - mw) / 2, my = (SCR_H - mh) / 2;
     gfx_fill_rect(&s, 0, 0, SCR_W, SCR_H, 0x80000000);
     if (showControls) { draw_controls(&s, &g_settings, "Controls"); video_overlay_changed(1); return; }
+    if (showStopped) {
+        int w = 440, h = 150, x = (SCR_W - w) / 2, y = (SCR_H - h) / 2;
+        gfx_fill_rect(&s, x, y, w, h, 0xf02a1a1a);
+        gfx_rect(&s, x, y, w - 1, h - 1, 0xffd05050, 0);
+        ui_text(&s, x + 14, y + 10, vm_problem_severity() == PROB_MISSING ? "This game can't run on PSPJ2ME" : "The game stopped working", 0xffffffff, 1, 1);
+        ui_text_wrapped(&s, x + 14, y + 36, w - 28, vm_problem_text(), 0xffe0e0e0);
+        ui_text(&s, x + 14, y + h - 40, "X: back to the game list", 0xffffffff, 0, 1);
+        ui_text(&s, x + 14, y + h - 22, "O: keep waiting (it may still recover)", 0xffb0b0b0, 0, 0);
+        video_overlay_changed(1);
+        return;
+    }
     gfx_fill_rect(&s, mx, my, mw, mh, 0xf0202838);
     gfx_rect(&s, mx, my, mw - 1, mh - 1, 0xff6080c0, 0);
     ui_text(&s, mx + 10, my + 6, "PSPJ2ME menu", 0xffffffff, 1, 1);
@@ -603,6 +640,7 @@ static void drawMenu(void) {
 static void closeMenu(void) {
     menuOpen = 0;
     showControls = 0;
+    showStopped = 0;
     video_overlay_changed(0);
     fpsShown = -1;
     video_frame();   /* redraw now: the game may not draw again by itself */
@@ -612,6 +650,11 @@ static void closeMenu(void) {
 
 static void menuInput(unsigned pressed) {
     if (showControls) { showControls = 0; drawMenu(); video_frame(); return; }
+    if (showStopped) {
+        if (pressed & PSP_CTRL_CROSS) { closeMenu(); userExit = 1; midp_request_exit(); }
+        else if (pressed & PSP_CTRL_CIRCLE) closeMenu();
+        return;
+    }
     if (pressed & PSP_CTRL_CIRCLE) { closeMenu(); return; }
     if (pressed & PSP_CTRL_UP) menuSel = (menuSel + MI_COUNT - 1) % MI_COUNT;
     if (pressed & PSP_CTRL_DOWN) menuSel = (menuSel + 1) % MI_COUNT;
@@ -742,6 +785,7 @@ static void testTick(void) {
     while (tkeyPos < nTKeys && tkeys[tkeyPos].at <= t) {
         TKey *k = &tkeys[tkeyPos++];
         vm_log("[test] key %d at %d ms\n", k->code, t);
+        lastKeyPressMs = plat_time_ms();
         midp_post_key(KEY_PRESS, k->code);
         midp_post_key(KEY_RELEASE, k->code);
     }
@@ -762,7 +806,10 @@ static void testTick(void) {
 /* ---------------- input ---------------- */
 static unsigned prevButtons;
 static KeyMap g_km;
-static void postKey(int type, int code) { midp_post_key(type, code); }
+static void postKey(int type, int code) {
+    if (type == KEY_PRESS) lastKeyPressMs = plat_time_ms();
+    midp_post_key(type, code);
+}
 
 static const unsigned btnMask[B_COUNT] = {
     PSP_CTRL_UP, PSP_CTRL_DOWN, PSP_CTRL_LEFT, PSP_CTRL_RIGHT, PSP_CTRL_CROSS, PSP_CTRL_CIRCLE, PSP_CTRL_SQUARE,
@@ -790,6 +837,24 @@ void plat_poll(void) {
         if ((b & COMBO) == COMBO) { if (!comboLatched) { comboLatched = 1; closeMenu(); } return; }
         comboLatched = 0;
         if (pressed) menuInput(pressed);
+        return;
+    }
+    /* a game that stopped drawing right after an error: say so instead of showing a frozen screen */
+    /* frozen = an error, no frame since, and either nothing was ever drawn or the player
+       pressed a button and nothing redrew (a static menu after a harmless error is not frozen) */
+    int64_t pt = vm_problem_time();
+    if (!vm_problem_severity() || g_lastPresentMs > pt) keyAfterProblemMs = 0;
+    else if (!keyAfterProblemMs && lastKeyPressMs > pt) keyAfterProblemMs = lastKeyPressMs;
+    if (!stoppedShown && vm_problem_severity() && g_lastPresentMs <= pt &&
+        ((g_framesPresented == 0 && now - pt > 3000) || (keyAfterProblemMs && now - keyAfterProblemMs > 2500))) {
+        stoppedShown = 1;
+        releaseAll();
+        menuOpen = 1;
+        showStopped = 1;
+        drawMenu();
+        video_frame();
+        vm_log("showing \"the game stopped working\" screen\n");
+        if (testMode) { gpuFinish(); sceIoDevctl("kemulator:", 0x20, NULL, 0, NULL, 0); }
         return;
     }
     /* START + SELECT together opens the PSPJ2ME menu */
@@ -982,36 +1047,50 @@ int main(int argc, char **argv) {
         if (heap > 48 * 1024 * 1024) heap = 48 * 1024 * 1024;
         vm_log("PSPJ2ME starting %s\nmemory: kernel free %u KB, total free %u KB, requesting Java heap %u KB\n", jar,
                (unsigned)(kfree / 1024), (unsigned)(sceKernelTotalFreeMemSize() / 1024), (unsigned)(heap / 1024));
-        if (vm_init((uint8_t *)g_bootJar, g_bootJarSize, heap) != 0) {
-            vm_log("VM init failed\n");
-            vm_shutdown();
-            jar[0] = 0;
-            if (testMode) break;
-            continue;
+        static jmp_buf fatalJmp;
+        volatile int rc = 2;
+        if (setjmp(fatalJmp) == 0) {
+            g_fatalJmp = &fatalJmp;   /* an internal VM error ends the game, not PSPJ2ME */
+            if (vm_init((uint8_t *)g_bootJar, g_bootJarSize, heap) != 0) {
+                g_fatalJmp = NULL;
+                vm_log("VM init failed\n");
+                vm_shutdown();
+                launcher_set_notice("Could not start this game", bn, "Not enough memory to start the Java VM. Restart PSPJ2ME and try again.");
+                jar[0] = 0;
+                if (testMode) break;
+                continue;
+            }
+            if (tMain[0]) {
+                extern int vm_run_main(const char *, const char *, const char *, const char *);
+                vm_add_classpath_file(jar);
+                rc = vm_run_main(tMain, "main", "([Ljava/lang/String;)V", NULL);
+            } else {
+                extern int64_t g_lastPresentMs;
+                extern uint32_t g_framesPresented;
+                g_lastPresentMs = plat_time_ms();
+                g_framesPresented = 0;
+                vmRunning = 1;
+                rc = midp_launch(jar, NULL);
+            }
         }
-        int rc;
-        if (tMain[0]) {
-            extern int vm_run_main(const char *, const char *, const char *, const char *);
-            vm_add_classpath_file(jar);
-            rc = vm_run_main(tMain, "main", "([Ljava/lang/String;)V", NULL);
-        } else {
-            extern int64_t g_lastPresentMs;
-            extern uint32_t g_framesPresented;
-            g_lastPresentMs = plat_time_ms();
-            g_framesPresented = 0;
-            vmRunning = 1;
-            rc = midp_launch(jar, NULL);
-        }
+        g_fatalJmp = NULL;
         vmRunning = 0;
         vm_log("MIDlet finished (rc=%d), returning to the game list\n", rc);
         {
-            /* tell the player why they are back in the list if the game never got going */
+            /* tell the player why they are back in the list if the game never got going or died */
             extern uint32_t g_framesPresented;
-            if (rc == 1)
-                launcher_set_notice(bn, "This file is not a J2ME game the emulator can start (damaged .jar, or no MIDlet in its manifest).");
-            else if (g_framesPresented == 0 && !userExit)
-                launcher_set_notice(bn, "The game stopped before showing anything. It may need an API PSPJ2ME does not support yet.");
+            extern int64_t g_lastPresentMs;
+            const char *why = vm_problem_text();
+            int frozeAfterProblem = vm_problem_severity() && g_lastPresentMs <= vm_problem_time();
+            if (rc != 0)
+                launcher_set_notice("Could not start this game", bn, why[0] ? why : "The game could not be loaded.");
+            else if (!stoppedShown && g_framesPresented == 0 && (!userExit || why[0]))
+                launcher_set_notice("Could not start this game", bn, why[0] ? why : "The game closed before showing anything.");
+            else if (!stoppedShown && frozeAfterProblem)
+                launcher_set_notice("The game stopped working", bn, why);
             userExit = 0;
+            stoppedShown = 0;
+            lastKeyPressMs = keyAfterProblemMs = 0;
         }
         mix_stop_all();
         vm_shutdown();

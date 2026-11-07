@@ -951,6 +951,7 @@ exception: {
                 ref_t name = 0; (void)name;
                 vm_log("Uncaught exception in thread %d:\n", t->id);
                 print_stack_trace(t, ex);
+                vm_problem_exception(ex, 0);
                 t->exception = 0;
                 thread_terminate(t);
                 return;

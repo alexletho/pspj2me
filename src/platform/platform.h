@@ -14,11 +14,9 @@ void plat_vibrate(int ms);
 /* text input: returns 1 and fills out (UTF-8) if the user accepted */
 int plat_edit_text(const char *title, const char *initial, char *out, int outSize, int maxChars, int constraints);
 /* audio: returns handle > 0, or -1 if the format is unsupported */
-int plat_sound_play(const uint8_t *data, int len, const char *mime, int loops, int volume);
-void plat_sound_stop(int handle);
-int plat_sound_playing(int handle);
-void plat_sound_volume(int handle, int volume);
-void plat_tone(int note, int durationMs, int volume);
+/* audio: the portable mixer (src/audio/mixer.h) does the work; the platform feeds its output */
+int plat_audio_available(void);   /* 0 if there is no audio output */
+void plat_audio_poll(void);       /* host: advance the mixer in real time (no output device) */
 void plat_overlay_active(int active);
 
 /* Provided by the core for the platform layer */

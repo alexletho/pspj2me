@@ -37,7 +37,8 @@ int main(int argc, char **argv) {
     const char *files[] = { "tests/midlets/res/sprites.png", "tests/midlets/res/pal.png", "tests/midlets/res/arrow.png",
                             "tests/midlets/res/tiles.png", "tests/jpeg/a420.jpg", "tests/jpeg/a444.jpg", "tests/jpeg/gray.jpg",
                             "tests/midlets/jars/GameTest.jar", "tests/audio/beep.wav", "tests/audio/rich.mid",
-                            "tests/fuzz/seeds/tone.seq", "tests/fuzz/seeds/adpcm.wav", NULL };
+                            "tests/fuzz/seeds/tone.seq", "tests/fuzz/seeds/adpcm.wav",
+                            "tests/fuzz/seeds/nokia.ota", "tests/midlets/res/half.wav", NULL };
     mix_init(NULL, NULL);
     int16_t abuf[2048];
     for (int fi = 0; files[fi]; fi++) {
@@ -72,6 +73,22 @@ int main(int argc, char **argv) {
             }
             int hnd = mix_play(d, n, 1, 100);
             if (hnd > 0) { for (int r = 0; r < 20 && mix_playing(hnd); r++) mix_render(abuf, 1024); mix_stop(hnd); }
+            /* players: Nokia ringtone parser, seeking, rate/pitch, MIDI events */
+            for (int kind = 0; kind < 2; kind++) {
+                int h = mix_load(d, n, kind);
+                if (h <= 0) continue;
+                mix_set_loops(h, 2);
+                mix_rate(h, 150000 + (int)(rnd() % 200000));
+                mix_pitch(h, (int)(rnd() % 24000) - 12000);
+                mix_start(h);
+                for (int r = 0; r < 6 && mix_playing(h); r++) mix_render(abuf, 1024);
+                int64_t dur = mix_duration_us(h);
+                mix_seek_us(h, dur > 0 ? (int64_t)(rnd() % (uint32_t)(dur + 1)) : 12345);
+                mix_midi_event(h, 0x90 | (rnd() % 16), rnd() % 128, rnd() % 128);
+                for (int r = 0; r < 4 && mix_playing(h); r++) mix_render(abuf, 1024);
+                (void)mix_time_us(h);
+                mix_free(h);
+            }
         }
         printf("fuzzed %-36s %d iterations\n", files[fi], iters);
         free(d); free(orig);

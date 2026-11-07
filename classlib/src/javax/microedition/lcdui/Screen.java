@@ -53,7 +53,7 @@ public abstract class Screen extends Displayable {
         int h = Display.H - Display.SOFTBAR_H - y;
         g.setClip(0, y, W, h);
         g.translate(0, y);
-        try { paintContent(g, W, h); } catch (Throwable t) { t.printStackTrace(); }
+        try { paintContent(g, W, h); } catch (Throwable t) { pspj2me.Native.gameError(t); }
         g.translate(0, -y);
         g.setClip(0, 0, W, Display.H);
         Display.paintSoftBar(g, this);

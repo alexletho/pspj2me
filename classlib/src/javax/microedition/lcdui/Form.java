@@ -61,7 +61,7 @@ public class Form extends Screen {
 
     void itemChanged(Item it) {
         if (stateListener != null) {
-            try { stateListener.itemStateChanged(it); } catch (Throwable t) { t.printStackTrace(); }
+            try { stateListener.itemStateChanged(it); } catch (Throwable t) { pspj2me.Native.gameError(t); }
         }
     }
 
@@ -122,7 +122,7 @@ public class Form extends Screen {
                 CustomItem ci = (CustomItem) f;
                 try {
                     if (type == 1) ci.keyPressed(code); else ci.keyRepeated(code);
-                } catch (Throwable t) { t.printStackTrace(); }
+                } catch (Throwable t) { pspj2me.Native.gameError(t); }
                 if (ga != Canvas.UP && ga != Canvas.DOWN) { Display.requestRepaint(); return; }
             } else if (f.key(ga, code)) { Display.requestRepaint(); return; }
             if (ga == Canvas.FIRE && type == 1) { f.activate(); Display.requestRepaint(); return; }
@@ -165,7 +165,7 @@ public class Form extends Screen {
         Item f = focused();
         if (f != null && f.commands.contains(c)) {
             if (f.commandListener != null) {
-                try { f.commandListener.commandAction(c, f); } catch (Throwable t) { t.printStackTrace(); }
+                try { f.commandListener.commandAction(c, f); } catch (Throwable t) { pspj2me.Native.gameError(t); }
             }
             return;
         }

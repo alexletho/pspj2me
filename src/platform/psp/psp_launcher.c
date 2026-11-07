@@ -1,6 +1,8 @@
 /* Game browser + per-game settings, drawn with the same software rasterizer. */
 #include <pspkernel.h>
 #include <pspctrl.h>
+#include <psprtc.h>
+#include <pspiofilemgr.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,42 +21,29 @@ typedef struct {
     char vendor[96];
     char midletName[128];   /* MIDlet-Name exactly as in the manifest (empty if missing) */
     uint32_t *icon;   /* 32x32 ARGB or NULL */
+    uint64_t added;      /* when the file was copied to the memory stick (RTC ticks, 0 = unknown) */
+    uint64_t lastPlayed; /* RTC ticks, 0 = never */
+    int plays;
 } Game;
+
+/* ---------------- sorting + play history ----------------
+ * data/history.txt: one line per game, "<plays> <last played tick> <file name>" */
+enum { SORT_NAME, SORT_RECENT, SORT_MOST, SORT_ADDED, SORT_COUNT };
+static const char *sortNames[SORT_COUNT] = { "Name", "Recently played", "Most played", "Recently added" };
+static int sortMode;
 
 #define MAX_GAMES 256
 static Game games[MAX_GAMES];
 static int nGames;
 static uint32_t *canvas;
-static char noticeGame[160], noticeMsg[200];
+static char noticeTitle[64], noticeGame[160], noticeMsg[300];
 
-void launcher_set_notice(const char *game, const char *msg) {
+void launcher_set_notice(const char *title, const char *game, const char *msg) {
+    snprintf(noticeTitle, sizeof noticeTitle, "%s", title);
     snprintf(noticeGame, sizeof noticeGame, "%s", game);
     snprintf(noticeMsg, sizeof noticeMsg, "%s", msg);
 }
 
-/* word-wraps msg into the box; returns the next y */
-static int drawWrapped(Surface *s, int x, int y, int w, const char *msg, uint32_t color) {
-    char line[200];
-    const char *p = msg;
-    while (*p) {
-        int n = 0, lastSpace = -1;
-        while (p[n] && n < (int)sizeof line - 1) {
-            line[n] = p[n];
-            line[n + 1] = 0;
-            if (ui_text_width(line, 0, 0) > w) break;
-            if (p[n] == ' ') lastSpace = n;
-            n++;
-        }
-        if (p[n] && lastSpace > 0) n = lastSpace;
-        if (n == 0) n = 1;
-        snprintf(line, sizeof line, "%.*s", n, p);
-        ui_text(s, x, y, line, color, 0, 0);
-        y += 16;
-        p += n;
-        while (*p == ' ') p++;
-    }
-    return y;
-}
 
 static const int sizes[][2] = { { 128, 128 }, { 128, 160 }, { 176, 208 }, { 176, 220 }, { 208, 208 }, { 240, 320 },
                                 { 320, 240 }, { 352, 416 }, { 360, 640 }, { 480, 272 }, { 400, 240 }, { 320, 272 }, { 360, 272 }, { 240, 272 }, { 480, 320 } };
@@ -101,6 +90,13 @@ static void loadGame(const char *path, const char *file) {
     snprintf(g->path, sizeof g->path, "%s", path);
     snprintf(g->file, sizeof g->file, "%s", file);
     snprintf(g->name, sizeof g->name, "%s", file);
+    SceIoStat st;
+    if (sceIoGetstat(path, &st) >= 0) {
+        u64 tick;
+        /* creation time = when it was copied to the card (the modification time is often the jar's original date) */
+        if (sceRtcGetTick(&st.sce_st_ctime, &tick) >= 0 && st.sce_st_ctime.year > 1980) g->added = tick;
+        else if (sceRtcGetTick(&st.sce_st_mtime, &tick) >= 0) g->added = tick;
+    }
     Zip *z = zip_open_file_lazy(path);
     if (!z) {
         FILE *f = fopen(path, "rb");
@@ -165,7 +161,94 @@ static void scanDir(const char *dir) {
     closedir(d);
 }
 
-static int cmpGames(const void *a, const void *b) { return strcasecmp(((const Game *)a)->name, ((const Game *)b)->name); }
+static int cmpGames(const void *a, const void *b) {
+    const Game *x = a, *y = b;
+    int c = 0;
+    switch (sortMode) {
+        case SORT_RECENT: c = (x->lastPlayed < y->lastPlayed) - (x->lastPlayed > y->lastPlayed); break;
+        case SORT_MOST: c = (x->plays < y->plays) - (x->plays > y->plays);
+            if (!c) c = (x->lastPlayed < y->lastPlayed) - (x->lastPlayed > y->lastPlayed);
+            break;
+        case SORT_ADDED: c = (x->added < y->added) - (x->added > y->added); break;
+    }
+    if (!c) c = strcasecmp(x->name, y->name);
+    if (!c) c = strcmp(x->path, y->path);
+    return c;
+}
+
+static void historyPath(char *out, int len) { snprintf(out, len, "%s/history.txt", plat_data_dir()); }
+
+static void loadHistory(void) {
+    char p[600], line[400];
+    historyPath(p, sizeof p);
+    FILE *f = fopen(p, "r");
+    if (!f) return;
+    while (fgets(line, sizeof line, f)) {
+        line[strcspn(line, "\r\n")] = 0;
+        unsigned long long t = 0;
+        int plays = 0, n = 0;
+        if (sscanf(line, "%d %llu %n", &plays, &t, &n) < 2 || n <= 0 || plays < 0) continue;
+        for (int i = 0; i < nGames; i++)
+            if (!strcmp(games[i].file, line + n)) { games[i].plays = plays; games[i].lastPlayed = t; }
+    }
+    fclose(f);
+}
+
+/* rewrites the history with one game's play recorded (keeps entries of games not listed now) */
+static void recordPlay(Game *g) {
+    u64 now = 0;
+    sceRtcGetCurrentTick(&now);
+    g->plays++;
+    g->lastPlayed = now;
+    char p[600], tmp[610], line[400];
+    historyPath(p, sizeof p);
+    snprintf(tmp, sizeof tmp, "%s.tmp", p);
+    FILE *in = fopen(p, "r"), *out = fopen(tmp, "w");
+    if (!out) { if (in) fclose(in); return; }
+    fprintf(out, "%d %llu %s\n", g->plays, (unsigned long long)g->lastPlayed, g->file);
+    int kept = 0;
+    while (in && fgets(line, sizeof line, in) && kept < 2000) {
+        line[strcspn(line, "\r\n")] = 0;
+        unsigned long long t;
+        int plays, n = 0;
+        if (sscanf(line, "%d %llu %n", &plays, &t, &n) < 2 || n <= 0) continue;
+        if (!strcmp(line + n, g->file)) continue;
+        fprintf(out, "%s\n", line);
+        kept++;
+    }
+    if (in) fclose(in);
+    if (fclose(out) == 0) { remove(p); rename(tmp, p); }
+}
+
+static void loadSortMode(void) {
+    char p[600], line[64];
+    snprintf(p, sizeof p, "%s/launcher.ini", plat_data_dir());
+    FILE *f = fopen(p, "r");
+    if (!f) return;
+    while (fgets(line, sizeof line, f)) if (!strncmp(line, "sort=", 5)) sortMode = atoi(line + 5);
+    fclose(f);
+    if (sortMode < 0 || sortMode >= SORT_COUNT) sortMode = SORT_NAME;
+}
+
+static void saveSortMode(void) {
+    char p[600];
+    snprintf(p, sizeof p, "%s/launcher.ini", plat_data_dir());
+    FILE *f = fopen(p, "w");
+    if (f) { fprintf(f, "sort=%d\n", sortMode); fclose(f); }
+}
+
+/* "today", "yesterday", "5 days ago", "3 months ago" */
+static void agoText(uint64_t tick, char *out, int len) {
+    u64 now = 0;
+    sceRtcGetCurrentTick(&now);
+    const uint64_t day = 86400ULL * 1000000ULL;   /* calendar days, not 24-hour periods */
+    int64_t days = tick && now > tick ? (int64_t)(now / day) - (int64_t)(tick / day) : 0;
+    if (days <= 0) snprintf(out, len, "today");
+    else if (days == 1) snprintf(out, len, "yesterday");
+    else if (days < 60) snprintf(out, len, "%d days ago", (int)days);
+    else if (days < 730) snprintf(out, len, "%d months ago", (int)(days / 30));
+    else snprintf(out, len, "%d years ago", (int)(days / 365));
+}
 
 static unsigned prevB;
 static unsigned readPressed(unsigned *held) {
@@ -346,6 +429,8 @@ int launcher_run(char *outJar, int outLen) {
     snprintf(extra, sizeof extra, "%s/J2ME", dev);
     scanDir(extra);
     if (strcmp(dev, "ms0:") != 0) { scanDir("ms0:/J2ME"); scanDir("ms0:/PSP/GAME/PSPJ2ME/games"); }
+    loadHistory();
+    loadSortMode();
     qsort(games, nGames, sizeof(Game), cmpGames);
     int sel = 0, top = 0;
     char lastPath[600];
@@ -368,7 +453,17 @@ int launcher_run(char *outJar, int outLen) {
             if (p & PSP_CTRL_DOWN) sel = (sel + 1) % nGames;
             if (p & PSP_CTRL_LEFT) sel = sel - rows < 0 ? 0 : sel - rows;
             if (p & PSP_CTRL_RIGHT) sel = sel + rows >= nGames ? nGames - 1 : sel + rows;
+            if (p & PSP_CTRL_START) {   /* next sort order; keep the selected game selected */
+                char keep[512];
+                snprintf(keep, sizeof keep, "%s", games[sel].path);
+                sortMode = (sortMode + 1) % SORT_COUNT;
+                saveSortMode();
+                qsort(games, nGames, sizeof(Game), cmpGames);
+                for (int i = 0; i < nGames; i++) if (!strcmp(games[i].path, keep)) sel = i;
+                top = sel > 2 ? sel - 2 : 0;
+            }
             if (p & PSP_CTRL_CROSS) {
+                if (outJar) recordPlay(&games[sel]);
                 snprintf(outJar, outLen, "%s", games[sel].path);
                 FILE *lf = fopen(lastPath, "w");
                 if (lf) { fprintf(lf, "%s\n", games[sel].path); fclose(lf); }
@@ -410,6 +505,7 @@ int launcher_run(char *outJar, int outLen) {
         char count[64];
         if (skippedGames) snprintf(count, sizeof count, "%d of %d games", nGames, nGames + skippedGames);
         else snprintf(count, sizeof count, "%d game%s", nGames, nGames == 1 ? "" : "s");
+        if (nGames > 1) snprintf(count + strlen(count), sizeof count - strlen(count), "  |  %s", sortNames[sortMode]);
         drawHeader(&s, "PSPJ2ME " PSPJ2ME_VERSION "  -  J2ME games", count);
         if (nGames == 0) {
             ui_text(&s, 20, 50, "No games found.", 0xffffffff, 2, 1);
@@ -425,8 +521,15 @@ int launcher_run(char *outJar, int outLen) {
             if (g->icon) gfx_blit(&s, g->icon, 32, 0, 0, 32, 32, 0, 12, y + 2, 1);
             else { gfx_fill_rect(&s, 12, y + 2, 32, 32, 0xff505868); ui_text(&s, 19, y + 10, "J2", 0xffffffff, 1, 1); }
             ui_text(&s, 54, y + 2, g->name, 0xffffffff, 1, 1);
-            char sub[300];
+            char sub[300], when[40] = "";
             snprintf(sub, sizeof sub, "%s%s%s", g->vendor, g->vendor[0] ? "  -  " : "", g->file);
+            if ((sortMode == SORT_RECENT || sortMode == SORT_MOST) && g->plays) {
+                agoText(g->lastPlayed, when, sizeof when);
+                snprintf(sub + strlen(sub), sizeof sub - strlen(sub), "  -  played %d time%s, last %s", g->plays, g->plays == 1 ? "" : "s", when);
+            } else if (sortMode == SORT_ADDED && g->added) {
+                agoText(g->added, when, sizeof when);
+                snprintf(sub + strlen(sub), sizeof sub - strlen(sub), "  -  added %s", when);
+            }
             ui_text(&s, 54, y + 19, sub, i == sel ? 0xffd8e4ff : 0xff9098a8, 0, 0);
         }
         if (nGames > rows) {
@@ -434,15 +537,15 @@ int launcher_run(char *outJar, int outLen) {
             gfx_fill_rect(&s, SCR_W - 4, yy, 3, h, 0xff8090b0);
         }
         if (noticeMsg[0]) {
-            int w = 420, h = 116, x = (SCR_W - w) / 2, y = (SCR_H - h) / 2;
+            int w = 440, h = 132, x = (SCR_W - w) / 2, y = (SCR_H - h) / 2;
             gfx_fill_rect(&s, x, y, w, h, 0xff2a1a1a);
             gfx_rect(&s, x, y, w - 1, h - 1, 0xffd05050, 0);
-            ui_text(&s, x + 14, y + 10, "Could not start this game", 0xffffffff, 1, 1);
+            ui_text(&s, x + 14, y + 10, noticeTitle, 0xffffffff, 1, 1);
             ui_text(&s, x + 14, y + 32, noticeGame, 0xffffd060, 0, 1);
-            int ty = drawWrapped(&s, x + 14, y + 52, w - 28, noticeMsg, 0xffe0e0e0);
+            int ty = ui_text_wrapped(&s, x + 14, y + 52, w - 28, noticeMsg, 0xffe0e0e0);
             ui_text(&s, x + 14, ty + 2, "Details: pspj2me.log.  Press any button.", 0xffb0b0b0, 0, 0);
         }
-        drawFooter(&s, nGames ? "X: play   Triangle: settings   Square: delete   SELECT: controls   HOME: quit" : "HOME: quit");
+        drawFooter(&s, nGames ? "X: play   Triangle: settings   Square: delete   SELECT: controls   START: sort" : "HOME: quit");
         video_draw_launcher(canvas);
         if (firstFrame) {
             firstFrame = 0;

@@ -47,12 +47,5 @@ void audio_shutdown(void) {
     if (channel >= 0) sceAudioChRelease(channel);
 }
 
-int plat_sound_play(const uint8_t *data, int len, const char *mime, int loops, int volume) {
-    (void)mime;
-    if (channel < 0) return -1;
-    return mix_play(data, len, loops, volume);
-}
-void plat_sound_stop(int h) { mix_stop(h); }
-int plat_sound_playing(int h) { return mix_playing(h); }
-void plat_sound_volume(int h, int v) { mix_volume(h, v); }
-void plat_tone(int note, int ms, int vol) { if (channel >= 0) mix_tone(note, ms, vol); }
+int plat_audio_available(void) { return channel >= 0; }
+void plat_audio_poll(void) {}

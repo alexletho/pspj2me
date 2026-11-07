@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <string.h>
 
 void natives_lang_post_init(void);
 void interp_set_oom(ref_t r);
@@ -27,10 +28,20 @@ void vm_fatal(const char *fmt, ...) {
     plat_log("FATAL: ");
     plat_log(buf);
     plat_log("\n");
+    if (g_fatalJmp) {
+        if (strstr(buf, "too many classes") || strstr(buf, "class too big"))
+            vm_problem(PROB_FATAL, "The game is too large for PSPJ2ME (%s).", buf);
+        else
+            vm_problem(PROB_FATAL, "PSPJ2ME hit an internal error (%s). Please report this game.", buf);
+        jmp_buf *j = g_fatalJmp;
+        g_fatalJmp = NULL;
+        longjmp(*j, 1);
+    }
     exit(1);
 }
 
 int vm_init(uint8_t *bootJar, size_t bootLen, size_t heapBytes) {
+    vm_problem_reset();
     while (heap_init(heapBytes) != 0) {
         if (heapBytes <= 4 * 1024 * 1024) { vm_log("heap init failed\n"); return -1; }
         heapBytes -= 2 * 1024 * 1024;
@@ -85,6 +96,8 @@ int vm_run_main(const char *clsName, const char *method, const char *desc, const
 }
 
 /* Tears down everything so vm_init() can be called again (used to return to the game list). */
+jmp_buf *g_fatalJmp;
+
 void vm_shutdown(void) {
     extern void classes_shutdown(void), heap_reset(void), interp_reset(void), strings_reset(void),
         threads_reset(void), natives_lang_reset(void), midp_reset(void);

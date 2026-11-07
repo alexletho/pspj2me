@@ -44,12 +44,44 @@ public class Bad {
         void useBluetooth() { new BtUser().go(); }
         protected void pauseApp() {} protected void destroyApp(boolean u) {}
     }
+    public static class Needs3D extends MIDlet {
+        protected void startApp() { javax.microedition.m3g.Graphics3D.getInstance(); }
+        protected void pauseApp() {} protected void destroyApp(boolean u) {}
+    }
     public static class InstantExit extends MIDlet {
         protected void startApp() { notifyDestroyed(); }
         protected void pauseApp() {} protected void destroyApp(boolean u) {}
     }
     public static class SysExit extends MIDlet {
         protected void startApp() { System.exit(3); }
+        protected void pauseApp() {} protected void destroyApp(boolean u) {}
+    }
+    /* draws for a second, then its game loop dies: the screen freezes */
+    public static class CrashLater extends MIDlet {
+        protected void startApp() {
+            final Canvas c = new Canvas() { int n; protected void paint(Graphics g) { g.setColor(n++ * 3); g.fillRect(0, 0, getWidth(), getHeight()); } };
+            Display.getDisplay(this).setCurrent(c);
+            new Thread() { public void run() {
+                long end = System.currentTimeMillis() + 1000;
+                while (System.currentTimeMillis() < end) { c.repaint(); try { Thread.sleep(30); } catch (InterruptedException e) {} }
+                Object o = null;
+                o.hashCode();   /* NullPointerException ends the loop */
+            } }.start();
+        }
+        protected void pauseApp() {} protected void destroyApp(boolean u) {}
+    }
+    /* one harmless error, then a static screen: must NOT be reported as frozen */
+    public static class HarmlessError extends MIDlet {
+        protected void startApp() {
+            Display.getDisplay(this).setCurrent(new Canvas() {
+                boolean first = true;
+                protected void paint(Graphics g) {
+                    g.setColor(0x204060); g.fillRect(0, 0, getWidth(), getHeight());
+                    if (first) { first = false; throw new RuntimeException("harmless"); }
+                }
+                protected void keyPressed(int k) { repaint(); }
+            });
+        }
         protected void pauseApp() {} protected void destroyApp(boolean u) {}
     }
     public static class Hang extends MIDlet {

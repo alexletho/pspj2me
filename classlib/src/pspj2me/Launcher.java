@@ -13,6 +13,7 @@ public final class Launcher {
         } catch (Throwable t) {
             System.out.println("Cannot instantiate MIDlet " + className + ": " + t);
             t.printStackTrace();
+            Native.reportProblem(t, 1);
             Native.exit();
             return;
         }

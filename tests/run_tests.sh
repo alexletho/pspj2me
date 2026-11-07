@@ -16,6 +16,10 @@ for M in GfxTest GameTest UiTest SerialTest SwitchTest SoundTest; do
   if grep -q "Uncaught exception\|FATAL\|missing native\|PAINT BEFORE" shots/$M.log; then echo "$M: FAILED"; cat shots/$M.log; exit 1; fi
   echo "$M: ok ($(grep -c . shots/$M.log) log lines)"
 done
+# MMAPI / Nokia Sound behaviour (pause/resume, times, loops, controls, eviction)
+PSPJ2ME_DATA=$DATA timeout 60 ./build/j2me_host --quit 20000 tests/midlets/jars/AudioTest.jar > shots/AudioTest.log 2>&1 || true
+grep -q "AudioTest: PASS" shots/AudioTest.log || { grep "AudioTest" shots/AudioTest.log; echo "AudioTest FAILED"; exit 1; }
+echo "AudioTest: $(grep -c 'AudioTest ok' shots/AudioTest.log) checks passed"
 gcc -Wall -o build/keymap_test tests/keymap/keymap_test.c src/platform/keymap.c -Isrc/platform
 ./build/keymap_test > build/keymap_test.log || { cat build/keymap_test.log; echo "keymap test FAILED"; exit 1; }
 tail -1 build/keymap_test.log
@@ -27,6 +31,22 @@ for J in tests/robustness/jars/*.jar; do
   RC=$?
   set -e
   if [ $RC -ge 124 ]; then echo "robustness $(basename $J): FAILED (exit $RC)"; tail -20 build/robust.log; exit 1; fi
+  # the explanation the player gets
+  case $(basename $J .jar) in
+    Needs3D) WANT="needs 3D graphics" ;;
+    NoClass) WANT="main class does.not.Exist is missing" ;;
+    RandomBytes|Empty|Truncated) WANT="damaged or is not a .jar" ;;
+    NoMidletEntry) WANT="names no MIDlet" ;;
+    OutOfMemory) WANT="ran out of memory" ;;
+    Recursion) WANT="endless recursion" ;;
+    CtorThrows) WANT="crashed while loading" ;;
+    StartThrows) WANT="crashed while starting" ;;
+    CrashLater) WANT="crashed (NullPointerException)" ;;
+    *) WANT="" ;;
+  esac
+  if [ -n "$WANT" ] && ! grep "PROBLEM:" build/robust.log | grep -q "$WANT"; then
+    echo "robustness $(basename $J): expected a message containing '$WANT'"; grep "PROBLEM" build/robust.log; exit 1
+  fi
 done
 echo "robustness: $(ls tests/robustness/jars/*.jar | wc -l) broken/misbehaving games handled"
 # short fuzz pass over the decoders (sanitizers when the compiler has them)

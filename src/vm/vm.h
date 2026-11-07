@@ -296,6 +296,18 @@ void natives_midp_init(void);
 /* logging */
 void vm_log(const char *fmt, ...);
 void vm_fatal(const char *fmt, ...);
+/* vm_fatal() longjmps here when set (back to the game list) instead of exiting */
+#include <setjmp.h>
+extern jmp_buf *g_fatalJmp;
+
+/* problems explained to the player (src/vm/problem.c); higher severity wins */
+enum { PROB_CRASH = 1, PROB_START = 2, PROB_MISSING = 3, PROB_FATAL = 4 };
+void vm_problem_reset(void);
+void vm_problem(int sev, const char *fmt, ...);
+void vm_problem_exception(ref_t ex, int phase);
+const char *vm_problem_text(void);
+int vm_problem_severity(void);
+int64_t vm_problem_time(void);
 
 #define ACC_PUBLIC 0x0001
 #define ACC_PRIVATE 0x0002

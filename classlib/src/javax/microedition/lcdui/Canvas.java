@@ -94,8 +94,8 @@ public abstract class Canvas extends Displayable {
 
     protected void sizeChanged(int w, int h) {}
 
-    void showNotify0() { shownFlag = true; try { showNotify(); } catch (Throwable t) { t.printStackTrace(); } }
-    void hideNotify0() { shownFlag = false; try { hideNotify(); } catch (Throwable t) { t.printStackTrace(); } }
+    void showNotify0() { shownFlag = true; try { showNotify(); } catch (Throwable t) { pspj2me.Native.gameError(t); } }
+    void hideNotify0() { shownFlag = false; try { hideNotify(); } catch (Throwable t) { pspj2me.Native.gameError(t); } }
 
     void paintScreen(Graphics g) {
         int h = getHeight();
@@ -103,7 +103,7 @@ public abstract class Canvas extends Displayable {
         try {
             paint(g);
         } catch (Throwable t) {
-            t.printStackTrace();
+            pspj2me.Native.gameError(t);
         }
         if (!isFull()) {
             g.setBounds(0, 0, Display.W, Display.H);
@@ -118,7 +118,7 @@ public abstract class Canvas extends Displayable {
             if (type == 1) keyPressed(code);
             else if (type == 2) keyReleased(code);
             else if (type == 3) keyRepeated(code);
-        } catch (Throwable t) { t.printStackTrace(); }
+        } catch (Throwable t) { pspj2me.Native.gameError(t); }
     }
 
     void pointerEvent(int type, int x, int y) {
@@ -126,6 +126,6 @@ public abstract class Canvas extends Displayable {
             if (type == 4) pointerPressed(x, y);
             else if (type == 5) pointerReleased(x, y);
             else pointerDragged(x, y);
-        } catch (Throwable t) { t.printStackTrace(); }
+        } catch (Throwable t) { pspj2me.Native.gameError(t); }
     }
 }

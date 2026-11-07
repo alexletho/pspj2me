@@ -86,7 +86,7 @@ public abstract class Displayable {
     void fireCommand(Command c) {
         CommandListener l = listener;
         if (l != null) {
-            try { l.commandAction(c, this); } catch (Throwable t) { t.printStackTrace(); }
+            try { l.commandAction(c, this); } catch (Throwable t) { pspj2me.Native.gameError(t); }
         }
     }
 

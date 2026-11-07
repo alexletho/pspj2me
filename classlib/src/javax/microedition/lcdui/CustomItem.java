@@ -39,19 +39,19 @@ public abstract class CustomItem extends Item {
         int ox = g.getClipX(), oy = g.getClipY(), ow = g.getClipWidth(), oh = g.getClipHeight();
         g.translate(x, y);
         g.clipRect(0, 0, cw, ch);
-        try { paint(g, cw, ch); } catch (Throwable t) { t.printStackTrace(); }
+        try { paint(g, cw, ch); } catch (Throwable t) { pspj2me.Native.gameError(t); }
         g.translate(-x, -y);
         g.setClip(ox, oy, ow, oh);
     }
     boolean focusable() { return true; }
     boolean key(int ga, int code) {
-        try { keyPressed(code); } catch (Throwable t) { t.printStackTrace(); }
+        try { keyPressed(code); } catch (Throwable t) { pspj2me.Native.gameError(t); }
         int[] vis = new int[4];
         boolean stay = false;
         try {
             int dir = ga == Canvas.UP ? Canvas.UP : ga == Canvas.DOWN ? Canvas.DOWN : ga == Canvas.LEFT ? Canvas.LEFT : ga == Canvas.RIGHT ? Canvas.RIGHT : 0;
             if (dir != 0) stay = traverse(dir, Display.W, Display.H, vis);
-        } catch (Throwable t) { t.printStackTrace(); }
+        } catch (Throwable t) { pspj2me.Native.gameError(t); }
         return stay || (ga != Canvas.UP && ga != Canvas.DOWN);
     }
 }

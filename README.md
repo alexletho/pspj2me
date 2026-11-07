@@ -59,7 +59,8 @@ game list.
 
 <p align="center"><img src="docs/controls.png" alt="Controls panel" width="400"></p>
 
-**In the game list:** ✕ play · △ game settings · □ delete a game · SELECT show controls · HOME quit.
+**In the game list:** ✕ play · △ game settings · □ delete a game · SELECT show controls ·
+START change the sort order (name, recently played, most played, recently added) · HOME quit.
 
 ## Per-game settings (△ in the game list)
 
@@ -86,12 +87,16 @@ Supported:
   (text entry uses the PSP's on-screen keyboard), record stores (saves)
 * Nokia UI API (`FullCanvas`, `DirectGraphics`, `DirectUtils`, `Sound`)
 * PNG and baseline JPEG images
-* Sound via MMAPI: **MIDI music** (built-in synthesizer), **WAV** (PCM and IMA ADPCM), tone sequences
+* Sound via MMAPI: **MIDI music** (built-in synthesizer), **WAV** (PCM and IMA ADPCM), tone sequences;
+  pause/resume, seeking, looping, stop times, volume, tempo/rate and pitch, `MIDIControl` and the
+  `device://midi` / `device://tone` players
+* Nokia `Sound`: WAV, Nokia ringtones (`FORMAT_TONE`) and beeps
 * Latin and Cyrillic text in the built-in fonts
 
 Not supported (yet):
 
-* MP3 / AMR audio (games continue silently)
+* MP3 / AMR audio (games continue silently; games that ask which formats are supported are told
+  MIDI and WAV, so most pick those instead)
 * 3D games (M3G / JSR-184), Bluetooth, networking (games see "no connection")
 * Vendor-specific APIs other than Nokia (Siemens, Samsung, Motorola, …)
 
@@ -109,8 +114,10 @@ to also log performance details.
 
 * *Game list is empty:* the `.jar` files must be directly inside `PSP/GAME/PSPJ2ME/games/`
   (not in sub-folders). Files that aren't valid `.jar` archives are skipped and listed in the log.
-* *"Could not start this game":* the file is damaged or the game needs an API PSPJ2ME doesn't
-  have yet. The log says which; please report it with the "Game doesn't work" form.
+* *"Could not start this game" / "The game stopped working":* PSPJ2ME tells you why in plain words,
+  for example that the game needs 3D graphics, that the .jar is damaged, or that the game crashed.
+  If a game freezes after an error, PSPJ2ME notices and offers to go back to the game list. The log
+  has the technical details; please report such games with the "Game doesn't work" form.
 * *Text too small / screen cut off:* change the phone screen size for that game (see above).
 * *Game ignores the OK key:* some games only react to the phone's dedicated Fire key. Map ✕ to
   "Fire" in the game's settings or send Fire from the START + SELECT menu.

@@ -3,9 +3,9 @@
 set -e
 cd "$(dirname "$0")"
 rm -rf out jars && mkdir -p out/classes jars
-javac -nowarn -source 8 -target 8 -Xlint:-options -bootclasspath ../../build/classes -d out/classes src/Bad.java stub/BtUser.java
-rm out/classes/BtUser.class
-for M in CtorThrows StartThrows Recursion OutOfMemory MissingApi InstantExit SysExit Hang BadRms BadImages; do
+javac -nowarn -source 8 -target 8 -Xlint:-options -bootclasspath ../../build/classes -d out/classes src/Bad.java stub/BtUser.java stub/javax/microedition/m3g/Graphics3D.java
+rm -r out/classes/BtUser.class out/classes/javax
+for M in Needs3D CrashLater HarmlessError CtorThrows StartThrows Recursion OutOfMemory MissingApi InstantExit SysExit Hang BadRms BadImages; do
   rm -rf out/$M && mkdir -p out/$M/META-INF
   cp out/classes/*.class out/$M/
   printf "Manifest-Version: 1.0\nMIDlet-Name: Bad$M\nMIDlet-Vendor: Tests\nMIDlet-Version: 1.0\nMIDlet-1: $M, , Bad\$$M\n" > out/$M/META-INF/MANIFEST.MF

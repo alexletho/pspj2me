@@ -58,7 +58,9 @@ int ui_text_width(const char *utf8, int size, int bold);
 /* launcher */
 int launcher_run(char *outJar, int outLen);
 /* message box shown over the game list on its next start (e.g. why a game could not start) */
-void launcher_set_notice(const char *game, const char *msg);
+void launcher_set_notice(const char *title, const char *game, const char *msg);
+/* word-wrapped text; returns the y below it */
+int ui_text_wrapped(Surface *s, int x, int y, int w, const char *msg, uint32_t color);
 
 /* audio */
 void audio_init(void);

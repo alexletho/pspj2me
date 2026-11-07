@@ -1,6 +1,7 @@
 /* Natives for MIDP (lcdui, rms, media glue) and the MIDlet launcher. */
 #include "../vm/vm.h"
 #include "../vm/zip.h"
+#include "../audio/mixer.h"
 #include "../gfx/gfx.h"
 #include "../platform/platform.h"
 #include <stdlib.h>
@@ -556,18 +557,43 @@ static int N_editText(Thread *t, int32_t *a) {
     return NAT_OK;
 }
 
-static int N_soundPlay(Thread *t, int32_t *a) {
+/* ---- sound (MMAPI players, Nokia Sound); see src/audio/mixer.h ---- */
+static int N_soundLoad(Thread *t, int32_t *a) {
     ref_t d = (ref_t)a[0];
     if (!d) NPE(t);
-    char mime[64] = "";
-    if (a[1]) string_to_utf8((ref_t)a[1], mime, sizeof mime);
-    a[0] = plat_sound_play((const uint8_t *)O_DATA(d), A_LEN(d), mime, a[2], a[3]);
+    plat_audio_poll();
+    a[0] = plat_audio_available() ? mix_load((const uint8_t *)O_DATA(d), A_LEN(d), a[1] == 1) : -1;
+    if (a[0] <= 0) vm_log("sound: unsupported or damaged audio data (%d bytes)\n", A_LEN(d));
     return NAT_OK;
 }
-static int N_soundStop(Thread *t, int32_t *a) { (void)t; plat_sound_stop(a[0]); return NAT_OK; }
-static int N_soundIsPlaying(Thread *t, int32_t *a) { (void)t; a[0] = plat_sound_playing(a[0]); return NAT_OK; }
-static int N_soundVolume(Thread *t, int32_t *a) { (void)t; plat_sound_volume(a[0], a[1]); return NAT_OK; }
-static int N_tone(Thread *t, int32_t *a) { (void)t; plat_tone(a[0], a[1], a[2]); return NAT_OK; }
+static int N_soundBeep(Thread *t, int32_t *a) { (void)t; a[0] = plat_audio_available() ? mix_load_beep(a[0], a[1]) : -1; return NAT_OK; }
+static int N_soundMidiDevice(Thread *t, int32_t *a) { (void)t; a[0] = plat_audio_available() ? mix_load_midi_device() : -1; return NAT_OK; }
+static int N_soundStart(Thread *t, int32_t *a) { (void)t; plat_audio_poll(); mix_start(a[0]); return NAT_OK; }
+static int N_soundPause(Thread *t, int32_t *a) { (void)t; plat_audio_poll(); mix_pause(a[0]); return NAT_OK; }
+static int N_soundFree(Thread *t, int32_t *a) { (void)t; mix_free(a[0]); return NAT_OK; }
+static int N_soundState(Thread *t, int32_t *a) {
+    (void)t;
+    plat_audio_poll();
+    a[0] = mix_valid(a[0]) ? mix_state(a[0]) : -1;
+    return NAT_OK;
+}
+static int N_soundLoops(Thread *t, int32_t *a) { (void)t; mix_set_loops(a[0], a[1]); return NAT_OK; }
+static int N_soundLoopsDone(Thread *t, int32_t *a) { (void)t; plat_audio_poll(); a[0] = mix_loops_done(a[0]); return NAT_OK; }
+static int N_soundTime(Thread *t, int32_t *a) { (void)t; plat_audio_poll(); slot_put_long(a, mix_time_us(a[0])); return NAT_OK; }
+static int N_soundDuration(Thread *t, int32_t *a) { (void)t; slot_put_long(a, mix_duration_us(a[0])); return NAT_OK; }
+static int N_soundSeek(Thread *t, int32_t *a) { (void)t; slot_put_long(a, mix_seek_us(a[0], slot_get_long(a + 1))); return NAT_OK; }
+static int N_soundStopAt(Thread *t, int32_t *a) { (void)t; mix_stop_at(a[0], slot_get_long(a + 1)); return NAT_OK; }
+static int N_soundVolume(Thread *t, int32_t *a) { (void)t; mix_volume(a[0], a[1]); return NAT_OK; }
+static int N_soundRate(Thread *t, int32_t *a) { (void)t; mix_rate(a[0], a[1]); return NAT_OK; }
+static int N_soundPitch(Thread *t, int32_t *a) { (void)t; mix_pitch(a[0], a[1]); return NAT_OK; }
+static int N_soundMidi(Thread *t, int32_t *a) { (void)t; mix_midi_event(a[0], a[1], a[2], a[3]); return NAT_OK; }
+static int N_soundMidiQuery(Thread *t, int32_t *a) { (void)t; a[0] = mix_midi_query(a[0], a[1], a[2]); return NAT_OK; }
+static int N_tone(Thread *t, int32_t *a) { (void)t; if (plat_audio_available()) mix_tone(a[0], a[1], a[2]); return NAT_OK; }
+static int N_reportProblem(Thread *t, int32_t *a) {
+    (void)t;
+    vm_problem_exception((ref_t)a[0], a[1]);
+    return NAT_OK;
+}
 
 void natives_midp_init(void) {
 #define R(c, n, d, f) vm_register_native(c, n, d, f)
@@ -613,11 +639,26 @@ void natives_midp_init(void) {
     R(N, "editText", NULL, N_editText);
     R(N, "vibrate", NULL, N_vibrate);
     R(N, "setOverlayActive", NULL, N_overlay);
-    R(N, "soundPlay", NULL, N_soundPlay);
-    R(N, "soundStop", NULL, N_soundStop);
-    R(N, "soundIsPlaying", NULL, N_soundIsPlaying);
+    R(N, "soundLoad", NULL, N_soundLoad);
+    R(N, "soundBeep", NULL, N_soundBeep);
+    R(N, "soundMidiDevice", NULL, N_soundMidiDevice);
+    R(N, "soundStart", NULL, N_soundStart);
+    R(N, "soundPause", NULL, N_soundPause);
+    R(N, "soundFree", NULL, N_soundFree);
+    R(N, "soundState", NULL, N_soundState);
+    R(N, "soundLoops", NULL, N_soundLoops);
+    R(N, "soundLoopsDone", NULL, N_soundLoopsDone);
+    R(N, "soundTime", NULL, N_soundTime);
+    R(N, "soundDuration", NULL, N_soundDuration);
+    R(N, "soundSeek", NULL, N_soundSeek);
+    R(N, "soundStopAt", NULL, N_soundStopAt);
     R(N, "soundVolume", NULL, N_soundVolume);
+    R(N, "soundRate", NULL, N_soundRate);
+    R(N, "soundPitch", NULL, N_soundPitch);
+    R(N, "soundMidi", NULL, N_soundMidi);
+    R(N, "soundMidiQuery", NULL, N_soundMidiQuery);
     R(N, "tone", NULL, N_tone);
+    R(N, "reportProblem", NULL, N_reportProblem);
 #undef R
     g_eventPendingHook = eventsPending;
 }
@@ -669,11 +710,19 @@ int midp_midlet_class(int index, char *out, int outLen) {
 }
 
 int midp_launch(const char *jarPath, const char *midletClass) {
-    if (vm_add_classpath_file(jarPath) != 0) { vm_log("cannot open jar %s\n", jarPath); return 1; }
+    if (vm_add_classpath_file(jarPath) != 0) {
+        vm_log("cannot open jar %s\n", jarPath);
+        vm_problem(PROB_FATAL, "This file is damaged or is not a .jar archive (or is too big to load).");
+        return 1;
+    }
     midp_load_descriptor(jarPath);
     char cls[256];
     if (midletClass) snprintf(cls, sizeof cls, "%s", midletClass);
-    else if (midp_midlet_class(1, cls, sizeof cls) != 0) { vm_log("no MIDlet-1 in manifest\n"); return 1; }
+    else if (midp_midlet_class(1, cls, sizeof cls) != 0) {
+        vm_log("no MIDlet-1 in manifest\n");
+        vm_problem(PROB_FATAL, "This .jar is not a J2ME game: its manifest names no MIDlet to start.");
+        return 1;
+    }
     const char *name = getProp("MIDlet-Name");
     const char *vendor = getProp("MIDlet-Vendor");
     char suite[300], enc[600];

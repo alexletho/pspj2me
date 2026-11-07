@@ -172,15 +172,8 @@ static void hostAudioTick(void) {
     static int16_t buf[4096 * 2];
     while (frames > 0) { int n = frames > 4096 ? 4096 : frames; mix_render(buf, n); frames -= n; }
 }
-int plat_sound_play(const uint8_t *data, int len, const char *mime, int loops, int volume) {
-    int h = mix_play(data, len, loops, volume);
-    printf("[host] sound play %s (%d bytes) -> %d\n", mime, len, h);
-    return h;
-}
-void plat_sound_stop(int h) { mix_stop(h); }
-int plat_sound_playing(int h) { hostAudioTick(); return mix_playing(h); }
-void plat_sound_volume(int h, int v) { mix_volume(h, v); }
-void plat_tone(int note, int d, int v) { mix_tone(note, d, v); }
+int plat_audio_available(void) { return 1; }
+void plat_audio_poll(void) { hostAudioTick(); }
 void plat_overlay_active(int a) { (void)a; }
 
 void *plat_heap_alloc(size_t bytes) { return malloc(bytes); }

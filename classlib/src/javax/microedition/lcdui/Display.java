@@ -61,6 +61,7 @@ public class Display {
         } catch (Throwable t) {
             System.out.println("startApp failed: " + t);
             t.printStackTrace();
+            pspj2me.Native.reportProblem(t, 2);
         }
     }
 
@@ -113,8 +114,10 @@ public class Display {
             menuOwner = null;
             Native.setOverlayActive(false);
         }
-        if (old != null) old.hideNotify0();
-        next.showNotify0();
+        try {
+            if (old != null) old.hideNotify0();
+            next.showNotify0();
+        } catch (Throwable t) { Native.gameError(t); }
         requestRepaint();
     }
 
@@ -180,7 +183,7 @@ public class Display {
                     Native.present(screen.pixels, W, H);
                 }
             } catch (Throwable t) {
-                t.printStackTrace();
+                pspj2me.Native.gameError(t);
             } finally {
                 painting = false;
             }
@@ -292,7 +295,11 @@ public class Display {
         int[] ev = new int[3];
         while (true) {
             applyPendingSwitch();
-            while (Native.pollEvent(ev)) { dispatch(ev); applyPendingSwitch(); }
+            while (Native.pollEvent(ev)) {
+                /* like a phone: an exception in a key/pointer/command handler doesn't end the game */
+                try { dispatch(ev); } catch (Throwable t) { Native.gameError(t); }
+                applyPendingSwitch();
+            }
             if (alertDeadline != 0 && System.currentTimeMillis() >= alertDeadline && instance != null && instance.current instanceof Alert) {
                 alertDeadline = 0;
                 Alert a = (Alert) instance.current;
@@ -305,7 +312,7 @@ public class Display {
             for (int i = 0; i < n && !serial.isEmpty(); i++) {
                 Runnable r = (Runnable) serial.elementAt(0);
                 serial.removeElementAt(0);
-                try { r.run(); } catch (Throwable t) { t.printStackTrace(); }
+                try { r.run(); } catch (Throwable t) { pspj2me.Native.gameError(t); }
             }
             if (!serial.isEmpty()) { Native.waitEvent(1); continue; }
             int timeout = 0;
@@ -330,13 +337,13 @@ public class Display {
             return;
         }
         if (type == Native.EV_PAUSE) {
-            try { MIDlet.callPauseApp(midlet); } catch (Throwable t) { t.printStackTrace(); }
+            try { MIDlet.callPauseApp(midlet); } catch (Throwable t) { Native.gameError(t); }
             if (instance != null && instance.current != null) instance.current.hideNotify0();
             return;
         }
         if (type == Native.EV_RESUME) {
             if (instance != null && instance.current != null) instance.current.showNotify0();
-            try { MIDlet.callStartApp(midlet); } catch (Throwable t) { t.printStackTrace(); }
+            try { MIDlet.callStartApp(midlet); } catch (Throwable t) { Native.gameError(t); }
             requestRepaint();
             return;
         }
