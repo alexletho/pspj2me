@@ -16,6 +16,14 @@ for M in GfxTest GameTest UiTest SerialTest SwitchTest SoundTest; do
   if grep -q "Uncaught exception\|FATAL\|missing native\|PAINT BEFORE" shots/$M.log; then echo "$M: FAILED"; cat shots/$M.log; exit 1; fi
   echo "$M: ok ($(grep -c . shots/$M.log) log lines)"
 done
+# game saves: the second start must find what the first one saved
+RMSDATA=$(mktemp -d)
+for P in 1 2; do
+  PSPJ2ME_DATA=$RMSDATA timeout 60 ./build/j2me_host --quit 15000 tests/midlets/jars/RmsTest.jar > shots/RmsTest$P.log 2>&1 || true
+  grep -q "RmsTest: PASS $P" shots/RmsTest$P.log || { grep "RmsTest" shots/RmsTest$P.log; echo "RmsTest run $P FAILED"; exit 1; }
+done
+rm -rf "$RMSDATA"
+echo "RmsTest: $(cat shots/RmsTest1.log shots/RmsTest2.log | grep -c 'RmsTest ok') checks passed over two starts"
 # MMAPI / Nokia Sound behaviour (pause/resume, times, loops, controls, eviction)
 PSPJ2ME_DATA=$DATA timeout 60 ./build/j2me_host --quit 20000 tests/midlets/jars/AudioTest.jar > shots/AudioTest.log 2>&1 || true
 grep -q "AudioTest: PASS" shots/AudioTest.log || { grep "AudioTest" shots/AudioTest.log; echo "AudioTest FAILED"; exit 1; }

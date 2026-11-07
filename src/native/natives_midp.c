@@ -463,12 +463,20 @@ static void decodeName(const char *in, char *out, int outLen) {
     out[o] = 0;
 }
 
-static void rmsPath(ref_t name, char *path, int len) {
+/* Record store files: <rms dir>/<encoded name>.rmsdb
+ * The extension is longer than 3 characters on purpose: FAT keeps a short "8.3" name like
+ * "score.rms" without a long-name entry, and the PSP then lists it as "SCORE.RMS" (case lost),
+ * so listRecordStores() could not report it. Version 1.0-1.5 files (.rms) are still read and
+ * moved to the new name on first use. */
+#define RMS_EXT ".rmsdb"
+#define RMS_OLD_EXT ".rms"
+static void rmsPathExt(ref_t name, char *path, int len, const char *ext) {
     char n[256], enc[800];
     string_to_utf8(name, n, sizeof n);
     encodeName(n, enc, sizeof enc);
-    snprintf(path, len, "%s/%s.rms", rmsDir, enc);
+    snprintf(path, len, "%s/%s%s", rmsDir, enc, ext);
 }
+static void rmsPath(ref_t name, char *path, int len) { rmsPathExt(name, path, len, RMS_EXT); }
 
 static int N_rmsRead(Thread *t, int32_t *a) {
     if (!a[0]) NPE(t);
@@ -480,6 +488,12 @@ static int N_rmsRead(Thread *t, int32_t *a) {
         char tmp[1210];
         snprintf(tmp, sizeof tmp, "%s.tmp", path);
         if (rename(tmp, path) == 0) f = fopen(path, "rb");
+    }
+    if (!f) {
+        /* saved by an older version: move it to the new name */
+        char old[1200];
+        rmsPathExt((ref_t)a[0], old, sizeof old, RMS_OLD_EXT);
+        if (rename(old, path) == 0) { vm_log("rms: moved %s to the new file name\n", old); f = fopen(path, "rb"); }
     }
     if (!f) { a[0] = 0; return NAT_OK; }
     fseek(f, 0, SEEK_END);
@@ -505,17 +519,26 @@ static int N_rmsWrite(Thread *t, int32_t *a) {
     size_t n = A_LEN(data);
     int ok = fwrite(O_DATA(data), 1, n, f) == n;
     ok &= fclose(f) == 0;
-    if (ok) { remove(path); ok = rename(tmp, path) == 0; }
-    else remove(tmp);   /* memory stick full or write-protected: don't leave a partial file */
+    if (ok) {
+        remove(path);
+        ok = rename(tmp, path) == 0;
+        if (ok) { char old[1200]; rmsPathExt((ref_t)a[0], old, sizeof old, RMS_OLD_EXT); remove(old); }
+    } else remove(tmp);   /* memory stick full or write-protected: don't leave a partial file */
     a[0] = ok;
     return NAT_OK;
 }
 static int N_rmsDelete(Thread *t, int32_t *a) {
     if (!a[0]) NPE(t);
-    char path[1200];
+    char path[1200], old[1200];
     rmsPath((ref_t)a[0], path, sizeof path);
-    a[0] = remove(path) == 0;
+    rmsPathExt((ref_t)a[0], old, sizeof old, RMS_OLD_EXT);
+    int r1 = remove(path) == 0, r2 = remove(old) == 0;
+    a[0] = r1 || r2;
     return NAT_OK;
+}
+static int endsWithCI(const char *s, size_t l, const char *ext) {
+    size_t el = strlen(ext);
+    return l > el && strcasecmp(s + l - el, ext) == 0;
 }
 static int N_rmsList(Thread *t, int32_t *a) {
     char names[64][256];
@@ -525,11 +548,14 @@ static int N_rmsList(Thread *t, int32_t *a) {
         struct dirent *e;
         while ((e = readdir(d)) && n < 64) {
             size_t l = strlen(e->d_name);
-            if (l > 4 && strcmp(e->d_name + l - 4, ".rms") == 0) {
-                char enc[256];
-                snprintf(enc, sizeof enc, "%.*s", (int)(l - 4), e->d_name);
-                decodeName(enc, names[n++], 256);
-            }
+            size_t el = endsWithCI(e->d_name, l, RMS_EXT) ? strlen(RMS_EXT) : endsWithCI(e->d_name, l, RMS_OLD_EXT) ? strlen(RMS_OLD_EXT) : 0;
+            if (!el) continue;
+            char enc[256], dec[256];
+            snprintf(enc, sizeof enc, "%.*s", (int)(l - el), e->d_name);
+            decodeName(enc, dec, sizeof dec);
+            int dup = 0;   /* the same store under the old and the new name */
+            for (int i = 0; i < n; i++) if (!strcmp(names[i], dec)) dup = 1;
+            if (!dup) snprintf(names[n++], 256, "%s", dec);
         }
         closedir(d);
     }
