@@ -194,7 +194,10 @@ void settings_load(Settings *s, const char *path) {
         else if (!strcmp(k, "shoulders")) s->shoulderCombos = atoi(v);
         else if (!strcmp(k, "keyver")) keyVer = atoi(v);
         else if (!strncmp(k, "key.", 4)) {
-            for (int b = 0; b < B_COUNT; b++) if (!strcmp(k + 4, btnKeys[b])) { keys[b] = atoi(v); haveKeys = 1; }
+            int code = atoi(v);
+            /* only codes the settings screen can produce: none, JK_* or a keypad key */
+            int valid = (code >= JK_CLEAR && code <= 0) || (code >= '0' && code <= '9') || code == '*' || code == '#';
+            for (int b = 0; b < B_COUNT; b++) if (valid && !strcmp(k + 4, btnKeys[b])) { keys[b] = code; haveKeys = 1; }
         }
     }
     fclose(f);
@@ -204,6 +207,9 @@ void settings_load(Settings *s, const char *path) {
     if (s->screenW < 64 || s->screenW > 512) s->screenW = 240;
     if (s->screenH < 64 || s->screenH > 512) s->screenH = 320;
     if (s->scale < 0 || s->scale >= SCALE_COUNT) s->scale = SCALE_FIT;  /* removed modes (rotate, 1:1) -> Fit */
+    s->filter = !!s->filter; s->showFps = !!s->showFps; s->vsync = !!s->vsync;
+    s->cpu333 = !!s->cpu333; s->shoulderCombos = !!s->shoulderCombos;
+    if (s->sleepScale < 10 || s->sleepScale > 100) s->sleepScale = 100;
 }
 
 void settings_save(const Settings *s, const char *path) {
@@ -545,6 +551,7 @@ static int pausedForOverlay;
 static int javaOverlay;
 static const int keypadCodes[] = { '1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#', JK_SOFT1, JK_SOFT2, JK_FIRE, JK_CLEAR };
 #define NKEYPAD ((int)(sizeof(keypadCodes) / sizeof(keypadCodes[0])))
+static int userExit;   /* the player chose "Exit game" */
 enum { MI_RESUME = 0, MI_CONTROLS, MI_KEYPAD, MI_SCALE, MI_FILTER, MI_FPS, MI_VSYNC, MI_EXIT, MI_COUNT };
 static int pendingRelease, pendingReleaseAt;
 
@@ -632,6 +639,7 @@ static void menuInput(unsigned pressed) {
             case MI_SCALE: g_settings.scale = (g_settings.scale + 1) % SCALE_COUNT; break;
             case MI_EXIT:
                 closeMenu();
+                userExit = 1;
                 midp_request_exit();
                 return;
         }
@@ -644,6 +652,7 @@ static void menuInput(unsigned pressed) {
 /* ---------------- developer test mode (autostart.txt) ----------------
  * jar=<path>            start this game directly (skip the launcher)
  * launcher=1            only show the launcher, screenshot it and quit
+ * thenlauncher=1        after the game, show the launcher, screenshot it and quit
  * quit=<ms>             exit after ms
  * shots=<ms>,<ms>,...   save shot_<ms>.ppm of the last frame
  * keys=<ms>:<code>,...  scripted key presses (code: number or up/down/left/right/fire/soft1/soft2/start) */
@@ -656,6 +665,7 @@ static int64_t tStart;
 static int testMode;
 static char tMain[128];
 static int tRelaunch;
+static int tThenLauncher;
 static int tControls;
 static char tJar[600];
 static uint32_t *lastFrame;
@@ -704,6 +714,7 @@ static int loadTestConfig(char *jar, int jarLen, int *launcherOnly) {
         else if (!strcmp(line, "launcher")) *launcherOnly = atoi(v);
         else if (!strcmp(line, "main")) snprintf(tMain, sizeof tMain, "%s", v);
         else if (!strcmp(line, "relaunch")) tRelaunch = atoi(v);
+        else if (!strcmp(line, "thenlauncher")) tThenLauncher = atoi(v);
         else if (!strcmp(line, "controls")) tControls = atoi(v);
         else if (!strcmp(line, "quit")) tQuit = tQuitOrig = atoi(v);
         else if (!strcmp(line, "shots")) {
@@ -745,7 +756,7 @@ static void testTick(void) {
         sceIoDevctl("kemulator:", 0x20, NULL, 0, NULL, 0); /* PPSSPP: capture the real display */
         tShotPos++;
     }
-    if (tQuit && t >= tQuit) { vm_log("[test] quit after %d ms\n", t); tQuit = 0; midp_request_exit(); }
+    if (tQuit && t >= tQuit) { vm_log("[test] quit after %d ms\n", t); tQuit = 0; userExit = 1; midp_request_exit(); }
 }
 
 /* ---------------- input ---------------- */
@@ -993,6 +1004,15 @@ int main(int argc, char **argv) {
         }
         vmRunning = 0;
         vm_log("MIDlet finished (rc=%d), returning to the game list\n", rc);
+        {
+            /* tell the player why they are back in the list if the game never got going */
+            extern uint32_t g_framesPresented;
+            if (rc == 1)
+                launcher_set_notice(bn, "This file is not a J2ME game the emulator can start (damaged .jar, or no MIDlet in its manifest).");
+            else if (g_framesPresented == 0 && !userExit)
+                launcher_set_notice(bn, "The game stopped before showing anything. It may need an API PSPJ2ME does not support yet.");
+            userExit = 0;
+        }
         mix_stop_all();
         vm_shutdown();
         /* reset in-game UI/input state */
@@ -1007,7 +1027,10 @@ int main(int argc, char **argv) {
         fpsShown = -1;
         jar[0] = 0;
         if (testMode) {
-            if (tRelaunch-- <= 0) break;
+            if (tRelaunch-- <= 0) {
+                if (tThenLauncher) launcher_run(NULL, 0);
+                break;
+            }
             snprintf(jar, sizeof jar, "%s", tJar);
             tStart = plat_time_ms();
             tkeyPos = 0; tShotPos = 0;

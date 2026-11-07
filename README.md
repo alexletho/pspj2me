@@ -108,7 +108,9 @@ work" form and attach both log files.** Games that work well can be reported wit
 to also log performance details.
 
 * *Game list is empty:* the `.jar` files must be directly inside `PSP/GAME/PSPJ2ME/games/`
-  (not in sub-folders).
+  (not in sub-folders). Files that aren't valid `.jar` archives are skipped and listed in the log.
+* *"Could not start this game":* the file is damaged or the game needs an API PSPJ2ME doesn't
+  have yet. The log says which; please report it with the "Game doesn't work" form.
 * *Text too small / screen cut off:* change the phone screen size for that game (see above).
 * *Game ignores the OK key:* some games only react to the phone's dedicated Fire key. Map ✕ to
   "Fire" in the game's settings or send Fire from the START + SELECT menu.

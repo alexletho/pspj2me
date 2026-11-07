@@ -58,12 +58,14 @@ static int16_t *decodeWav(const uint8_t *d, int len, int *outFrames, int *outCh,
         if (bps != 1 && bps != 2) return NULL;
         frames = dataLen / (bps * ch);
         out = malloc((size_t)frames * ch * 2 + 2);
+        if (!out) return NULL;
         for (int i = 0; i < frames * ch; i++)
-            out[i] = bps == 1 ? (int16_t)((data[i] - 128) << 8) : (int16_t)rd16(data + i * 2);
+            out[i] = bps == 1 ? (int16_t)((data[i] - 128) * 256) : (int16_t)rd16(data + i * 2);
     } else if (fmt == 0x11 && bits == 4 && block > 4 * ch) {
         int perBlock = (block - 4 * ch) * 8 / (4 * ch) + 1;
         int nBlocks = (dataLen + block - 1) / block;
         out = malloc((size_t)nBlocks * perBlock * ch * 2 + 2);
+        if (!out) return NULL;
         for (int b = 0; b < nBlocks; b++) {
             const uint8_t *bp = data + b * block;
             int avail = dataLen - b * block;
@@ -136,23 +138,52 @@ static int cmpEv(const void *a, const void *b) {
     return py - px;
 }
 
+#define MIDI_MAX_EVENTS 262144 /* 4 MB of events: far beyond any real phone tune */
+
+/* make room for n more events; 0 when the cap is hit or memory runs out */
+static int midiReserve(Midi *m, int *cap, int n) {
+    if (m->nEv + n <= *cap) return 1;
+    if (m->nEv + n > MIDI_MAX_EVENTS) return 0;
+    int nc = *cap * 2;
+    while (nc < m->nEv + n) nc *= 2;
+    if (nc > MIDI_MAX_EVENTS) nc = MIDI_MAX_EVENTS;
+    MEv *ne = realloc(m->ev, (size_t)nc * sizeof(MEv));
+    if (!ne) return 0;
+    m->ev = ne;
+    *cap = nc;
+    return 1;
+}
+
+static uint32_t be32m(const uint8_t *p) { return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3]; }
+
+static Midi *newMidi(int cap) {
+    Midi *m = calloc(1, sizeof(Midi));
+    if (!m) return NULL;
+    m->ev = malloc((size_t)cap * sizeof(MEv));
+    if (!m->ev) { free(m); return NULL; }
+    return m;
+}
+
 static Midi *parseMidi(const uint8_t *d, int len) {
     if (len < 14 || memcmp(d, "MThd", 4)) return NULL;
-    uint32_t hl = (d[4] << 24) | (d[5] << 16) | (d[6] << 8) | d[7];
+    uint32_t hl = be32m(d + 4);
     int ntracks = (d[10] << 8) | d[11];
     int division = (d[12] << 8) | d[13];
     if (division & 0x8000) division = 480; /* SMPTE: approximate */
     if (division <= 0) division = 480;
-    int pos = 8 + hl;
-    Midi *m = calloc(1, sizeof(Midi));
+    if (hl > (uint32_t)len - 8) return NULL;
+    size_t pos = 8 + (size_t)hl;
     int cap = 1024;
-    m->ev = malloc(cap * sizeof(MEv));
+    Midi *m = newMidi(cap);
+    if (!m) return NULL;
     m->division = division;
-    for (int t = 0; t < ntracks && pos + 8 <= len; t++) {
-        uint32_t tl = (d[pos + 4] << 24) | (d[pos + 5] << 16) | (d[pos + 6] << 8) | d[pos + 7];
-        if (memcmp(d + pos, "MTrk", 4)) { pos += 8 + tl; continue; }
-        const uint8_t *p = d + pos + 8, *end = p + tl;
-        if (end > d + len) end = d + len;
+    int full = 0;
+    for (int t = 0; t < ntracks && !full && pos + 8 <= (size_t)len; t++) {
+        uint32_t tl = be32m(d + pos + 4);
+        size_t avail = (size_t)len - pos - 8;
+        size_t tlen = tl < avail ? tl : avail;
+        if (memcmp(d + pos, "MTrk", 4)) { pos += 8 + tlen; continue; }
+        const uint8_t *p = d + pos + 8, *end = p + tlen;
         uint32_t tick = 0;
         uint8_t running = 0;
         while (p < end) {
@@ -164,29 +195,35 @@ static Midi *parseMidi(const uint8_t *d, int len) {
                 if (p >= end) break;
                 uint8_t type = *p++;
                 uint32_t l = varlen(&p, end);
-                if (type == 0x51 && l == 3 && p + 3 <= end) {
-                    if (m->nEv == cap) { cap *= 2; m->ev = realloc(m->ev, cap * sizeof(MEv)); }
+                if (l > (size_t)(end - p)) break;
+                if (type == 0x51 && l == 3) {
+                    if (!midiReserve(m, &cap, 1)) { full = 1; break; }
                     MEv *e = &m->ev[m->nEv++];
                     memset(e, 0, sizeof *e);
-                    e->tick = tick; e->meta = 1; e->tempo = (p[0] << 16) | (p[1] << 8) | p[2];
+                    e->tick = tick; e->meta = 1; e->tempo = ((uint32_t)p[0] << 16) | (p[1] << 8) | p[2];
                 }
                 if (type == 0x2f) break;
                 p += l;
                 continue;
             }
-            if (st == 0xf0 || st == 0xf7) { uint32_t l = varlen(&p, end); p += l; continue; }
+            if (st == 0xf0 || st == 0xf7) {
+                uint32_t l = varlen(&p, end);
+                if (l > (size_t)(end - p)) break;
+                p += l;
+                continue;
+            }
             if (!(st & 0x80)) break;
             running = st;
             int hi = st & 0xf0;
             uint8_t d1 = p < end ? *p++ : 0, d2 = 0;
             if (hi != 0xc0 && hi != 0xd0) d2 = p < end ? *p++ : 0;
             if (hi == 0x80 || hi == 0x90 || hi == 0xb0 || hi == 0xc0 || hi == 0xe0) {
-                if (m->nEv == cap) { cap *= 2; m->ev = realloc(m->ev, cap * sizeof(MEv)); }
+                if (!midiReserve(m, &cap, 1)) { full = 1; break; }
                 MEv *e = &m->ev[m->nEv++];
                 e->tick = tick; e->st = st; e->d1 = d1 & 0x7f; e->d2 = d2 & 0x7f; e->meta = 0; e->tempo = 0;
             }
         }
-        pos += 8 + tl;
+        pos += 8 + tlen;
     }
     qsort(m->ev, m->nEv, sizeof(MEv), cmpEv);
     return m;
@@ -195,9 +232,9 @@ static Midi *parseMidi(const uint8_t *d, int len) {
 /* tone sequence (ToneControl) -> Midi */
 static Midi *parseToneSeq(const uint8_t *d, int len) {
     if (len < 2 || (int8_t)d[0] != -2 || d[1] != 1) return NULL;
-    Midi *m = calloc(1, sizeof(Midi));
     int cap = 256;
-    m->ev = malloc(cap * sizeof(MEv));
+    Midi *m = newMidi(cap);
+    if (!m) return NULL;
     m->division = 64; /* resolution: 1/64 notes by default */
     int tempo = 30, res = 64, vol = 100;
     int blockStart[128] = { 0 };
@@ -218,12 +255,12 @@ static Midi *parseToneSeq(const uint8_t *d, int len) {
             continue; }
         if (c == -6) { if (sp > 0) pos = stack[--sp]; else pos += 2; continue; }
         if (c == -7) { if (sp < 16 && blockStart[v & 127]) { stack[sp++] = pos + 2; pos = blockStart[v & 127]; } else pos += 2; continue; }
-        if (c == -8) { vol = v; pos += 2; continue; }
+        if (c == -8) { vol = v > 100 ? 100 : v; pos += 2; continue; }
         if (c == -9) { /* repeat next note v times */
             if (pos + 3 < len) {
                 int note = (int8_t)d[pos + 2], dur = d[pos + 3];
                 for (int r = 0; r < v; r++) {
-                    if (m->nEv + 2 >= cap) { cap *= 2; m->ev = realloc(m->ev, cap * sizeof(MEv)); }
+                    if (!midiReserve(m, &cap, 3)) break;
                     if (note >= 0) {
                         m->ev[m->nEv++] = (MEv){ tick, 0x90, (uint8_t)note, (uint8_t)(vol * 127 / 100), 0, 0 };
                         m->ev[m->nEv++] = (MEv){ tick + dur, 0x80, (uint8_t)note, 0, 0, 0 };
@@ -235,7 +272,7 @@ static Midi *parseToneSeq(const uint8_t *d, int len) {
             continue;
         }
         /* note or silence */
-        if (m->nEv + 2 >= cap) { cap *= 2; m->ev = realloc(m->ev, cap * sizeof(MEv)); }
+        if (!midiReserve(m, &cap, 3)) break;
         if (c >= 0) {
             m->ev[m->nEv++] = (MEv){ tick, 0x90, (uint8_t)c, (uint8_t)(vol * 127 / 100), 0, 0 };
             m->ev[m->nEv++] = (MEv){ tick + v, 0x80, (uint8_t)c, 0, 0, 0 };
@@ -245,7 +282,11 @@ static Midi *parseToneSeq(const uint8_t *d, int len) {
     }
     /* tempo: beats per minute = tempo*4; resolution res per whole note -> ticks per quarter = res/4 */
     m->division = res / 4 > 0 ? res / 4 : 16;
-    if (m->nEv == cap) m->ev = realloc(m->ev, (cap + 1) * sizeof(MEv));
+    if (m->nEv >= cap) {
+        MEv *ne = realloc(m->ev, ((size_t)m->nEv + 1) * sizeof(MEv));
+        if (!ne) { free(m->ev); free(m); return NULL; }
+        m->ev = ne;
+    }
     memmove(m->ev + 1, m->ev, m->nEv * sizeof(MEv));
     m->ev[0] = (MEv){ 0, 0, 0, 0, 1, (uint32_t)(60000000 / (tempo * 4 > 0 ? tempo * 4 : 120)) };
     m->nEv++;
@@ -619,6 +660,11 @@ int mix_play(const uint8_t *data, int len, int loops, int volume) {
         if (!midi) midi = parseToneSeq(data, len);
         if (!midi) return -1;
     }
+    Synth *syn = NULL;
+    if (midi) {
+        syn = calloc(1, sizeof(Synth));
+        if (!syn) { free(midi->ev); free(midi); return -1; }
+    }
     lockFn();
     Chn *c = allocChn();
     c->handle = nextHandle++;
@@ -630,7 +676,7 @@ int mix_play(const uint8_t *data, int len, int loops, int volume) {
         c->pos = 0;
     } else {
         c->type = 2;
-        c->synth = calloc(1, sizeof(Synth));
+        c->synth = syn;
         c->synth->midi = midi;
         c->synth->loopsLeft = c->loops;
         synthReset(c->synth);
@@ -672,6 +718,8 @@ void mix_tone(int note, int durationMs, int volume) {
     Chn *c = allocChn();
     c->handle = nextHandle++;
     c->type = 3;
+    if (durationMs < 0) durationMs = 0;
+    if (durationMs > 60000) durationMs = 60000;
     c->toneLeft = durationMs * MIX_RATE / 1000;
     c->toneInc = noteInc[note & 127];
     c->volume = volume;
@@ -681,7 +729,12 @@ void mix_tone(int note, int durationMs, int volume) {
 void mix_render(int16_t *out, int frames) {
     static int32_t *acc;
     static int accCap;
-    if (frames > accCap) { free(acc); acc = malloc(frames * 2 * sizeof(int32_t)); accCap = frames; }
+    if (frames > accCap) {
+        free(acc);
+        acc = malloc(frames * 2 * sizeof(int32_t));
+        accCap = acc ? frames : 0;
+        if (!acc) { memset(out, 0, (size_t)frames * 2 * sizeof(int16_t)); return; }
+    }
     memset(acc, 0, frames * 2 * sizeof(int32_t));
     lockFn();
     for (int i = 0; i < NCHAN; i++) {

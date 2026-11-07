@@ -71,5 +71,6 @@ int main(int argc, char **argv) {
         }
     }
     if (final) host_save_last_frame(final);
+    if (repeat > 1) free(bootData);   /* the VM was shut down: nothing references it any more */
     return rc;
 }

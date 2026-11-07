@@ -17,3 +17,5 @@ PSPJ2ME.zip
 PSPJ2ME*.zip
 out/
 tests/keymap/keymap_test
+build-asan/
+tests/jpeg/jt

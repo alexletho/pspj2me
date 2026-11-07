@@ -113,10 +113,13 @@ uint32_t *png_decode(const uint8_t *data, int len, int *outW, int *outH, int *ha
             if (pi.colorType == 3) { nTrnsPal = clen > 256 ? 256 : clen; memcpy(trnsPal, cd, nTrnsPal); }
             else if (pi.colorType == 0 && clen >= 2) pi.trnsGray = (cd[0] << 8) | cd[1];
             else if (pi.colorType == 2 && clen >= 6) { pi.trnsR = (cd[0] << 8) | cd[1]; pi.trnsG = (cd[2] << 8) | cd[3]; pi.trnsB = (cd[4] << 8) | cd[5]; }
-        } else if (!memcmp(type, "IDAT", 4)) {
+        } else if (!memcmp(type, "IDAT", 4) && clen > 0) {
             if (idatLen + clen > idatCap) {
-                idatCap = (idatLen + clen) * 2;
-                idat = realloc(idat, idatCap);
+                size_t ncap = (idatLen + clen) * 2;
+                uint8_t *n = realloc(idat, ncap);
+                if (!n) { free(idat); return NULL; }   /* out of memory: give up cleanly */
+                idat = n;
+                idatCap = ncap;
             }
             memcpy(idat + idatLen, cd, clen);
             idatLen += clen;
@@ -124,6 +127,17 @@ uint32_t *png_decode(const uint8_t *data, int len, int *outW, int *outH, int *ha
         pos += 12 + clen;
     }
     if (w <= 0 || h <= 0 || w > 8192 || h > 8192 || !idat) { free(idat); return NULL; }
+    /* only the bit depths the PNG spec allows for each color type */
+    {
+        int d = pi.depth, ok;
+        switch (pi.colorType) {
+            case 0: ok = d == 1 || d == 2 || d == 4 || d == 8 || d == 16; break;
+            case 3: ok = d == 1 || d == 2 || d == 4 || d == 8; break;
+            case 2: case 4: case 6: ok = d == 8 || d == 16; break;
+            default: ok = 0;
+        }
+        if (!ok || interlace > 1) { free(idat); return NULL; }
+    }
     switch (pi.colorType) {
         case 0: pi.channels = 1; break;
         case 2: pi.channels = 3; break;

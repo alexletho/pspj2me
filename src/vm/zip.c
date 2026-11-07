@@ -196,6 +196,8 @@ int inflate_zlib(const uint8_t *src, size_t srcLen, uint8_t *dst, size_t dstLen,
 }
 
 /* ---------------- zip ---------------- */
+#define ZIP_MAX_ENTRY (32u * 1024 * 1024)   /* no J2ME resource is anywhere near this */
+#define ZIP_MAX_CD (4u * 1024 * 1024)       /* central directory of a lazily opened zip */
 static uint32_t rd16(const uint8_t *p) { return p[0] | (p[1] << 8); }
 static uint32_t rd32(const uint8_t *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((uint32_t)p[3] << 24); }
 
@@ -205,40 +207,41 @@ static unsigned hashName(const char *s) {
     return h;
 }
 
-Zip *zip_open_mem(uint8_t *data, size_t len, int own) {
-    if (len < 22) return NULL;
-    /* locate end of central directory */
-    long eocd = -1;
-    long minPos = (long)len - 22 - 65535;
+/* finds the end-of-central-directory record in buf (the last bufLen bytes of the archive) */
+static long findEocd(const uint8_t *buf, size_t bufLen) {
+    if (bufLen < 22) return -1;
+    long minPos = (long)bufLen - 22 - 65535;
     if (minPos < 0) minPos = 0;
-    for (long i = (long)len - 22; i >= minPos; i--) {
-        if (rd32(data + i) == 0x06054b50) { eocd = i; break; }
-    }
-    if (eocd < 0) return NULL;
-    uint32_t count = rd16(data + eocd + 10);
-    uint32_t cdOff = rd32(data + eocd + 16);
-    if (cdOff >= len) return NULL;
+    for (long i = (long)bufLen - 22; i >= minPos; i--)
+        if (rd32(buf + i) == 0x06054b50) return i;
+    return -1;
+}
+
+/* parses count central-directory records from cd[0..cdLen) */
+static Zip *parseCentral(const uint8_t *cd, size_t cdLen, uint32_t count) {
     Zip *z = calloc(1, sizeof(Zip));
-    z->data = data; z->len = len; z->ownsData = own;
+    if (!z) return NULL;
     z->entries = calloc(count ? count : 1, sizeof(ZipEntry));
     z->nBuckets = 1;
     while (z->nBuckets < (int)count * 2) z->nBuckets <<= 1;
     z->buckets = calloc(z->nBuckets, sizeof(ZipEntry *));
-    size_t p = cdOff;
+    if (!z->entries || !z->buckets) { free(z->entries); free(z->buckets); free(z); return NULL; }
+    size_t p = 0;
     int n = 0;
     for (uint32_t i = 0; i < count; i++) {
-        if (p + 46 > len || rd32(data + p) != 0x02014b50) break;
+        if (p + 46 > cdLen || rd32(cd + p) != 0x02014b50) break;
         ZipEntry *e = &z->entries[n];
-        e->method = rd16(data + p + 10);
-        e->compSize = rd32(data + p + 20);
-        e->size = rd32(data + p + 24);
-        uint32_t nameLen = rd16(data + p + 28);
-        uint32_t extraLen = rd16(data + p + 30);
-        uint32_t commentLen = rd16(data + p + 32);
-        e->localOffset = rd32(data + p + 42);
-        if (p + 46 + nameLen > len) break;
+        e->method = rd16(cd + p + 10);
+        e->compSize = rd32(cd + p + 20);
+        e->size = rd32(cd + p + 24);
+        uint32_t nameLen = rd16(cd + p + 28);
+        uint32_t extraLen = rd16(cd + p + 30);
+        uint32_t commentLen = rd16(cd + p + 32);
+        e->localOffset = rd32(cd + p + 42);
+        if (p + 46 + nameLen > cdLen) break;
         e->name = malloc(nameLen + 1);
-        memcpy(e->name, data + p + 46, nameLen);
+        if (!e->name) break;
+        memcpy(e->name, cd + p + 46, nameLen);
         e->name[nameLen] = 0;
         unsigned h = hashName(e->name) & (z->nBuckets - 1);
         e->next = z->buckets[h];
@@ -248,6 +251,51 @@ Zip *zip_open_mem(uint8_t *data, size_t len, int own) {
     }
     z->nEntries = n;
     return z;
+}
+
+Zip *zip_open_mem(uint8_t *data, size_t len, int own) {
+    long eocd = findEocd(data, len);
+    if (eocd < 0) return NULL;
+    uint32_t count = rd16(data + eocd + 10);
+    uint32_t cdOff = rd32(data + eocd + 16);
+    if (cdOff >= len) return NULL;
+    Zip *z = parseCentral(data + cdOff, len - cdOff, count);
+    if (!z) return NULL;
+    z->data = data; z->len = len; z->ownsData = own;
+    return z;
+}
+
+Zip *zip_open_file_lazy(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    uint8_t *tail = NULL, *cd = NULL;
+    Zip *z = NULL;
+    if (fseek(f, 0, SEEK_END) != 0) goto fail;
+    long len = ftell(f);
+    if (len < 22) goto fail;
+    size_t tailLen = len < 22 + 65535 ? (size_t)len : 22 + 65535;
+    tail = malloc(tailLen);
+    if (!tail || fseek(f, len - (long)tailLen, SEEK_SET) != 0 || fread(tail, 1, tailLen, f) != tailLen) goto fail;
+    long eocd = findEocd(tail, tailLen);
+    if (eocd < 0) goto fail;
+    uint32_t count = rd16(tail + eocd + 10);
+    uint32_t cdSize = rd32(tail + eocd + 12);
+    uint32_t cdOff = rd32(tail + eocd + 16);
+    if ((uint64_t)cdOff + cdSize > (uint64_t)len || cdSize > ZIP_MAX_CD) goto fail;
+    cd = malloc(cdSize ? cdSize : 1);
+    if (!cd || fseek(f, cdOff, SEEK_SET) != 0 || fread(cd, 1, cdSize, f) != cdSize) goto fail;
+    z = parseCentral(cd, cdSize, count);
+    if (!z) goto fail;
+    z->file = f;
+    z->len = (size_t)len;
+    free(tail);
+    free(cd);
+    return z;
+fail:
+    free(tail);
+    free(cd);
+    fclose(f);
+    return NULL;
 }
 
 Zip *zip_open_file(const char *path) {
@@ -272,6 +320,7 @@ void zip_close(Zip *z) {
     free(z->entries);
     free(z->buckets);
     if (z->ownsData) free(z->data);
+    if (z->file) fclose((FILE *)z->file);
     free(z);
 }
 
@@ -284,24 +333,45 @@ ZipEntry *zip_find(Zip *z, const char *name) {
     return NULL;
 }
 
+
 uint8_t *zip_read(Zip *z, ZipEntry *e, uint32_t *outLen) {
-    if (e->localOffset + 30 > z->len) return NULL;
-    const uint8_t *lh = z->data + e->localOffset;
-    if (rd32(lh) != 0x04034b50) return NULL;
-    size_t dataOff = e->localOffset + 30 + rd16(lh + 26) + rd16(lh + 28);
-    if (dataOff + e->compSize > z->len) return NULL;
-    uint8_t *out = malloc(e->size + 1);
-    if (!out) return NULL;
-    if (e->method == 0) {
-        memcpy(out, z->data + dataOff, e->size);
-    } else if (e->method == 8) {
-        size_t got = 0;
-        int r = inflate_raw(z->data + dataOff, e->compSize, out, e->size, &got);
-        if (r != 0 || got != e->size) { free(out); return NULL; }
-    } else {
-        free(out);
-        return NULL;
+    /* all bounds in 64-bit: corrupt offsets/sizes must not wrap around */
+    uint64_t len = z->len;
+    if ((uint64_t)e->localOffset + 30 > len) return NULL;
+    uint8_t lhBuf[30];
+    const uint8_t *lh;
+    if (z->data) lh = z->data + e->localOffset;
+    else {
+        FILE *f = z->file;
+        if (fseek(f, e->localOffset, SEEK_SET) != 0 || fread(lhBuf, 1, 30, f) != 30) return NULL;
+        lh = lhBuf;
     }
+    if (rd32(lh) != 0x04034b50) return NULL;
+    uint64_t dataOff = (uint64_t)e->localOffset + 30 + rd16(lh + 26) + rd16(lh + 28);
+    if (dataOff + e->compSize > len) return NULL;
+    if (e->size > ZIP_MAX_ENTRY || e->compSize > ZIP_MAX_ENTRY) return NULL;
+    if (e->method == 0 && e->size != e->compSize) return NULL;
+    if (e->method != 0 && e->method != 8) return NULL;
+    const uint8_t *src;
+    uint8_t *srcBuf = NULL;
+    if (z->data) src = z->data + dataOff;
+    else {
+        FILE *f = z->file;
+        srcBuf = malloc(e->compSize ? e->compSize : 1);
+        if (!srcBuf) return NULL;
+        if (fseek(f, (long)dataOff, SEEK_SET) != 0 || fread(srcBuf, 1, e->compSize, f) != e->compSize) { free(srcBuf); return NULL; }
+        src = srcBuf;
+    }
+    uint8_t *out = malloc((size_t)e->size + 1);
+    if (!out) { free(srcBuf); return NULL; }
+    if (e->method == 0) {
+        memcpy(out, src, e->size);
+    } else {
+        size_t got = 0;
+        int r = inflate_raw(src, e->compSize, out, e->size, &got);
+        if (r != 0 || got != e->size) { free(out); free(srcBuf); return NULL; }
+    }
+    free(srcBuf);
     out[e->size] = 0;
     if (outLen) *outLen = e->size;
     return out;

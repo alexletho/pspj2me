@@ -13,7 +13,8 @@ typedef struct ZipEntry {
 } ZipEntry;
 
 typedef struct Zip {
-    uint8_t *data;
+    uint8_t *data;      /* whole archive in memory, or NULL for a lazy (file-backed) zip */
+    void *file;         /* FILE * of a lazy zip */
     size_t len;
     int ownsData;
     int nEntries;
@@ -25,6 +26,9 @@ typedef struct Zip {
 /* Opens a zip from a memory buffer. If takeOwnership, the buffer is free()d on close. */
 Zip *zip_open_mem(uint8_t *data, size_t len, int takeOwnership);
 Zip *zip_open_file(const char *path);
+/* Reads only the central directory; entries are read from the file on demand.
+   Cheap way to look at a few entries (manifest, icon) of a big jar. */
+Zip *zip_open_file_lazy(const char *path);
 void zip_close(Zip *z);
 ZipEntry *zip_find(Zip *z, const char *name);
 /* Returns malloc'ed buffer with uncompressed data (with an extra 0 byte appended). */

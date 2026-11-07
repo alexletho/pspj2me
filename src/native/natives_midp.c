@@ -474,10 +474,17 @@ static int N_rmsRead(Thread *t, int32_t *a) {
     char path[1200];
     rmsPath((ref_t)a[0], path, sizeof path);
     FILE *f = fopen(path, "rb");
+    if (!f) {
+        /* power lost between "remove old" and "rename new" in N_rmsWrite: the .tmp is complete */
+        char tmp[1210];
+        snprintf(tmp, sizeof tmp, "%s.tmp", path);
+        if (rename(tmp, path) == 0) f = fopen(path, "rb");
+    }
     if (!f) { a[0] = 0; return NAT_OK; }
     fseek(f, 0, SEEK_END);
     long n = ftell(f);
     fseek(f, 0, SEEK_SET);
+    if (n < 0 || n > 16 * 1024 * 1024) { fclose(f); a[0] = 0; return NAT_OK; }
     ref_t arr = new_prim_array('B', (int32_t)n);
     if (!arr) { fclose(f); OOM(t); }
     if (n > 0 && fread(O_DATA(arr), 1, n, f) != (size_t)n) { fclose(f); a[0] = 0; return NAT_OK; }
@@ -498,6 +505,7 @@ static int N_rmsWrite(Thread *t, int32_t *a) {
     int ok = fwrite(O_DATA(data), 1, n, f) == n;
     ok &= fclose(f) == 0;
     if (ok) { remove(path); ok = rename(tmp, path) == 0; }
+    else remove(tmp);   /* memory stick full or write-protected: don't leave a partial file */
     a[0] = ok;
     return NAT_OK;
 }
@@ -616,7 +624,7 @@ void natives_midp_init(void) {
 
 /* Reads manifest (+ sibling .jad) of a jar into the property table. Returns 0 on success. */
 int midp_load_descriptor(const char *jarPath) {
-    Zip *z = zip_open_file(jarPath);
+    Zip *z = zip_open_file_lazy(jarPath);
     if (!z) return -1;
     ZipEntry *e = zip_find(z, "META-INF/MANIFEST.MF");
     if (e) {

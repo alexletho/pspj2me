@@ -117,23 +117,27 @@ static void idct(const int *in, uint8_t *out, int stride) {
         }
     for (int x = 0; x < 8; x++)
         for (int y = 0; y < 8; y++) {
-            int s = 0;
-            for (int v = 0; v < 8; v++) s += c[y][v] * tmp[v * 8 + x];
-            s = (s >> 16) + 128;
-            if (s < 0) s = 0;
-            if (s > 255) s = 255;
+            int64_t acc = 0;   /* 64-bit: corrupt data must not overflow */
+            for (int v = 0; v < 8; v++) acc += (int64_t)c[y][v] * tmp[v * 8 + x];
+            int64_t s64 = (acc >> 16) + 128;
+            int s = s64 < 0 ? 0 : s64 > 255 ? 255 : (int)s64;
             out[y * stride + x] = (uint8_t)s;
         }
 }
+
+static inline int clampCoef(int64_t v) { return v > 32767 ? 32767 : v < -32768 ? -32768 : (int)v; }
 
 static void decodeBlock(Jpg *j, Comp *c, uint8_t *dst, int stride) {
     int coef[64];
     memset(coef, 0, sizeof coef);
     int t = decodeHuff(j, &j->hdc[c->td]);
+    if (t > 16) t = 0;   /* corrupt table: a DC difference has at most 16 bits */
     int diff = t ? extend(getbits(j, t), t) : 0;
     c->pred += diff;
+    if (c->pred > 32767) c->pred = 32767;      /* corrupt streams: keep values in range */
+    if (c->pred < -32768) c->pred = -32768;
     uint16_t *q = j->qt[c->tq];
-    coef[0] = c->pred * q[0];
+    coef[0] = clampCoef((int64_t)c->pred * q[0]);
     for (int k = 1; k < 64;) {
         int rs = decodeHuff(j, &j->hac[c->ta]);
         int r = rs >> 4, s = rs & 15;
@@ -143,7 +147,7 @@ static void decodeBlock(Jpg *j, Comp *c, uint8_t *dst, int stride) {
         }
         k += r;
         if (k > 63) break;
-        coef[zigzag[k]] = extend(getbits(j, s), s) * q[k];
+        coef[zigzag[k]] = clampCoef((int64_t)extend(getbits(j, s), s) * q[k]);
         k++;
     }
     idct(coef, dst, stride);

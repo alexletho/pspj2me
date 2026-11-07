@@ -25,6 +25,36 @@ typedef struct {
 static Game games[MAX_GAMES];
 static int nGames;
 static uint32_t *canvas;
+static char noticeGame[160], noticeMsg[200];
+
+void launcher_set_notice(const char *game, const char *msg) {
+    snprintf(noticeGame, sizeof noticeGame, "%s", game);
+    snprintf(noticeMsg, sizeof noticeMsg, "%s", msg);
+}
+
+/* word-wraps msg into the box; returns the next y */
+static int drawWrapped(Surface *s, int x, int y, int w, const char *msg, uint32_t color) {
+    char line[200];
+    const char *p = msg;
+    while (*p) {
+        int n = 0, lastSpace = -1;
+        while (p[n] && n < (int)sizeof line - 1) {
+            line[n] = p[n];
+            line[n + 1] = 0;
+            if (ui_text_width(line, 0, 0) > w) break;
+            if (p[n] == ' ') lastSpace = n;
+            n++;
+        }
+        if (p[n] && lastSpace > 0) n = lastSpace;
+        if (n == 0) n = 1;
+        snprintf(line, sizeof line, "%.*s", n, p);
+        ui_text(s, x, y, line, color, 0, 0);
+        y += 16;
+        p += n;
+        while (*p == ' ') p++;
+    }
+    return y;
+}
 
 static const int sizes[][2] = { { 128, 128 }, { 128, 160 }, { 176, 208 }, { 176, 220 }, { 208, 208 }, { 240, 320 },
                                 { 320, 240 }, { 352, 416 }, { 360, 640 }, { 480, 272 }, { 400, 240 }, { 320, 272 }, { 360, 272 }, { 240, 272 }, { 480, 320 } };
@@ -53,6 +83,7 @@ static char *manifestValue(const char *mf, const char *key, char *out, int outLe
 
 static uint32_t *scaleIcon(const uint32_t *src, int w, int h) {
     uint32_t *o = malloc(32 * 32 * 4);
+    if (!o) return NULL;
     for (int y = 0; y < 32; y++)
         for (int x = 0; x < 32; x++) {
             int sx = x * w / 32, sy = y * h / 32;
@@ -61,23 +92,29 @@ static uint32_t *scaleIcon(const uint32_t *src, int w, int h) {
     return o;
 }
 
+static int skippedGames;
 static void loadGame(const char *path, const char *file) {
-    if (nGames >= MAX_GAMES) return;
+    if (nGames >= MAX_GAMES) { skippedGames++; return; }
     for (int i = 0; i < nGames; i++) if (strcmp(games[i].path, path) == 0) return;
     Game *g = &games[nGames];
     memset(g, 0, sizeof *g);
     snprintf(g->path, sizeof g->path, "%s", path);
     snprintf(g->file, sizeof g->file, "%s", file);
     snprintf(g->name, sizeof g->name, "%s", file);
-    Zip *z = zip_open_file(path);
-    if (!z) return; /* not a valid jar: skip */
+    Zip *z = zip_open_file_lazy(path);
+    if (!z) {
+        FILE *f = fopen(path, "rb");
+        if (f) fclose(f);
+        vm_log("launcher: skipping %s (%s)\n", file, f ? "not a valid .jar" : strlen(path) > 250 ? "file name too long" : "cannot open");
+        return;
+    }
     ZipEntry *e = zip_find(z, "META-INF/MANIFEST.MF");
     if (e) {
         uint32_t len;
         char *mf = (char *)zip_read(z, e, &len);
         if (mf) {
             char v[256], icon[256] = "";
-            if (manifestValue(mf, "MIDlet-Name", v, sizeof v)) { snprintf(g->name, sizeof g->name, "%s", v); snprintf(g->midletName, sizeof g->midletName, "%s", v); }
+            if (manifestValue(mf, "MIDlet-Name", v, sizeof v) && v[0]) { snprintf(g->name, sizeof g->name, "%s", v); snprintf(g->midletName, sizeof g->midletName, "%s", v); }
             if (manifestValue(mf, "MIDlet-Vendor", v, sizeof v)) snprintf(g->vendor, sizeof g->vendor, "%s", v);
             if (manifestValue(mf, "MIDlet-Icon", v, sizeof v)) snprintf(icon, sizeof icon, "%s", v);
             else if (manifestValue(mf, "MIDlet-1", v, sizeof v)) {
@@ -291,8 +328,10 @@ static int settingsScreen(Game *g) {
 
 int launcher_run(char *outJar, int outLen) {
     if (!canvas) canvas = malloc(SCR_W * SCR_H * 4);
+    if (!canvas) { vm_log("launcher: out of memory\n"); return -1; }
     for (int i = 0; i < nGames; i++) free(games[i].icon);
     nGames = 0;
+    skippedGames = 0;
     int firstFrame = 1;
     char dir[600];
     snprintf(dir, sizeof dir, "%s/games", g_baseDir);
@@ -323,7 +362,8 @@ int launcher_run(char *outJar, int outLen) {
     prevB = 0xffffffff;
     for (;;) {
         unsigned p = readPressed(NULL);
-        if (nGames > 0) {
+        if (noticeMsg[0] && !firstFrame && p) { noticeMsg[0] = 0; p = 0; }  /* any button closes the notice */
+        if (nGames > 0 && !noticeMsg[0]) {
             if (p & PSP_CTRL_UP) sel = (sel + nGames - 1) % nGames;
             if (p & PSP_CTRL_DOWN) sel = (sel + 1) % nGames;
             if (p & PSP_CTRL_LEFT) sel = sel - rows < 0 ? 0 : sel - rows;
@@ -366,8 +406,10 @@ int launcher_run(char *outJar, int outLen) {
         }
         if (sel < top) top = sel;
         if (sel >= top + rows) top = sel - rows + 1;
+        if (top > nGames - rows) top = nGames - rows > 0 ? nGames - rows : 0;  /* after a delete */
         char count[64];
-        snprintf(count, sizeof count, "%d game%s", nGames, nGames == 1 ? "" : "s");
+        if (skippedGames) snprintf(count, sizeof count, "%d of %d games", nGames, nGames + skippedGames);
+        else snprintf(count, sizeof count, "%d game%s", nGames, nGames == 1 ? "" : "s");
         drawHeader(&s, "PSPJ2ME " PSPJ2ME_VERSION "  -  J2ME games", count);
         if (nGames == 0) {
             ui_text(&s, 20, 50, "No games found.", 0xffffffff, 2, 1);
@@ -391,9 +433,23 @@ int launcher_run(char *outJar, int outLen) {
             int h = (SCR_H - 54) * rows / nGames, yy = 28 + (SCR_H - 54 - h) * top / (nGames - rows);
             gfx_fill_rect(&s, SCR_W - 4, yy, 3, h, 0xff8090b0);
         }
-        drawFooter(&s, "X: play   Triangle: settings   Square: delete   SELECT: controls   HOME: quit");
+        if (noticeMsg[0]) {
+            int w = 420, h = 116, x = (SCR_W - w) / 2, y = (SCR_H - h) / 2;
+            gfx_fill_rect(&s, x, y, w, h, 0xff2a1a1a);
+            gfx_rect(&s, x, y, w - 1, h - 1, 0xffd05050, 0);
+            ui_text(&s, x + 14, y + 10, "Could not start this game", 0xffffffff, 1, 1);
+            ui_text(&s, x + 14, y + 32, noticeGame, 0xffffd060, 0, 1);
+            int ty = drawWrapped(&s, x + 14, y + 52, w - 28, noticeMsg, 0xffe0e0e0);
+            ui_text(&s, x + 14, ty + 2, "Details: pspj2me.log.  Press any button.", 0xffb0b0b0, 0, 0);
+        }
+        drawFooter(&s, nGames ? "X: play   Triangle: settings   Square: delete   SELECT: controls   HOME: quit" : "HOME: quit");
         video_draw_launcher(canvas);
-        if (firstFrame) { firstFrame = 0; vm_log("launcher: %d game(s) found\n", nGames); sceIoDevctl("kemulator:", 0x20, NULL, 0, NULL, 0); }
+        if (firstFrame) {
+            firstFrame = 0;
+            vm_log("launcher: %d game(s) found\n", nGames);
+            if (skippedGames) vm_log("launcher: %d more game(s) not listed (limit %d)\n", skippedGames, MAX_GAMES);
+            sceIoDevctl("kemulator:", 0x20, NULL, 0, NULL, 0);
+        }
         if (!outJar) { /* test mode: dump the launcher screen and stop */
             char p[700];
             snprintf(p, sizeof p, "%s/shot_launcher.ppm", g_baseDir);
