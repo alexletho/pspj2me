@@ -14,6 +14,7 @@ enum { SCALE_FIT = 0, SCALE_STRETCH, SCALE_COUNT };
 
 /* PSP buttons we map (index into Settings.keys) */
 #include "../keymap.h"   /* B_* button indices */
+#include "../detect.h"   /* KP_* phone key profiles, game build detection */
 
 typedef struct {
     int screenW, screenH;
@@ -22,10 +23,10 @@ typedef struct {
     int showFps;
     int vsync;
     int keys[B_COUNT];
-    int cpu333;
-    int fullCanvas;
-    int sleepScale;
-    int shoulderCombos; /* L/R act as shift buttons for extra keys */   /* % of the time Thread.sleep really sleeps (100 = normal) */   /* report the whole screen to every Canvas (no soft-key strip) */
+    int sleepScale;     /* % of the time Thread.sleep really sleeps (100 = normal) */
+    int shoulderCombos; /* L/R act as shift buttons for extra keys */
+    int screenAuto;     /* pick the screen size from the game's build (src/platform/detect.c) */
+    int phone;          /* key-code profile: KP_AUTO / KP_NOKIA / ... (detect.h) */
 } Settings;
 
 extern Settings g_settings;

@@ -45,7 +45,7 @@ public abstract class CustomItem extends Item {
     }
     boolean focusable() { return true; }
     boolean key(int ga, int code) {
-        try { keyPressed(code); } catch (Throwable t) { pspj2me.Native.gameError(t); }
+        try { keyPressed(KeyCodes.toGame(code)); } catch (Throwable t) { pspj2me.Native.gameError(t); }
         int[] vis = new int[4];
         boolean stay = false;
         try {

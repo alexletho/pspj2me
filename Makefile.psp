@@ -4,7 +4,7 @@ TARGET = pspj2me
 B = build/psp
 
 SRCS = $(wildcard src/vm/*.c) src/native/natives_lang.c src/native/natives_midp.c \
-       $(wildcard src/gfx/*.c) $(wildcard src/audio/*.c) $(wildcard src/platform/psp/*.c) src/platform/keymap.c
+       $(wildcard src/gfx/*.c) $(wildcard src/audio/*.c) $(wildcard src/platform/psp/*.c) src/platform/keymap.c src/platform/detect.c
 AMR_OBJDIR = $(B)
 include src/audio/third_party/amr.mk
 OBJS = $(patsubst src/%.c,$(B)/%.o,$(SRCS)) $(AMR_OBJ) $(B)/bootjar.o

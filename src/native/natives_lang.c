@@ -309,6 +309,10 @@ void vm_set_property(const char *k, const char *v) {
     for (i = 0; props[i].k; i++) if (strcmp(props[i].k, k) == 0) { props[i].v = v; return; }
     if (i < 31) { props[i].k = k; props[i].v = v; props[i + 1].k = NULL; }
 }
+void lang_set_platform(const char *name) {
+    for (int i = 0; props[i].k; i++) if (!strcmp(props[i].k, "microedition.platform")) props[i].v = name;
+}
+
 static int System_getProperty0(Thread *t, int32_t *a) {
     char buf[256];
     string_to_utf8((ref_t)a[0], buf, sizeof buf);

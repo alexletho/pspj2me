@@ -21,6 +21,7 @@ typedef struct {
     char vendor[96];
     char midletName[128];   /* MIDlet-Name exactly as in the manifest (empty if missing) */
     uint32_t *icon;   /* 32x32 ARGB or NULL */
+    int nMidlets;        /* games in this jar (MIDlet-1, MIDlet-2, ...) */
     uint64_t added;      /* when the file was copied to the memory stick (RTC ticks, 0 = unknown) */
     uint64_t lastPlayed; /* RTC ticks, 0 = never */
     int plays;
@@ -111,6 +112,12 @@ static void loadGame(const char *path, const char *file) {
         if (mf) {
             char v[256], icon[256] = "";
             if (manifestValue(mf, "MIDlet-Name", v, sizeof v) && v[0]) { snprintf(g->name, sizeof g->name, "%s", v); snprintf(g->midletName, sizeof g->midletName, "%s", v); }
+            for (int k = 1; k <= 20; k++) {
+                char key[16];
+                snprintf(key, sizeof key, "MIDlet-%d", k);
+                if (!manifestValue(mf, key, v, sizeof v)) break;
+                g->nMidlets = k;
+            }
             if (manifestValue(mf, "MIDlet-Vendor", v, sizeof v)) snprintf(g->vendor, sizeof g->vendor, "%s", v);
             if (manifestValue(mf, "MIDlet-Icon", v, sizeof v)) snprintf(icon, sizeof icon, "%s", v);
             else if (manifestValue(mf, "MIDlet-1", v, sizeof v)) {
@@ -342,8 +349,11 @@ static int settingsScreen(Game *g) {
     snprintf(cfg, sizeof cfg, "%s/%s.ini", plat_data_dir(), bn);
     Settings st = g_settings;
     settings_load(&st, cfg);
+    GameDetect gd;               /* what "Auto" picks for this game */
+    detect_game(g->path, &gd);
+    if (!gd.w) { gd.w = 240; gd.h = 320; }
     int sel = 0, top = 0;
-    enum { S_SIZE = 0, S_SPEED, S_SHOULDERS, S_SCALE, S_FILTER, S_FPS, S_VSYNC, S_KEYS };
+    enum { S_SIZE = 0, S_PHONE, S_SPEED, S_SHOULDERS, S_SCALE, S_FILTER, S_FPS, S_VSYNC, S_KEYS };
     int nItems = S_KEYS + B_COUNT + 1; /* + reset */
     Surface s;
     ui_surface(&s, canvas);
@@ -358,11 +368,15 @@ static int settingsScreen(Game *g) {
         if ((p & PSP_CTRL_CROSS) && !dir) dir = 1;
         if (dir) {
             if (sel == S_SIZE) {
+                /* position -1 = Auto, then the fixed sizes */
                 int cur = 0;
                 for (int i = 0; i < NSIZES; i++) if (sizes[i][0] == st.screenW && sizes[i][1] == st.screenH) cur = i;
-                cur = (cur + NSIZES + dir) % NSIZES;
-                st.screenW = sizes[cur][0]; st.screenH = sizes[cur][1];
-            } else if (sel == S_SCALE) st.scale = (st.scale + SCALE_COUNT + dir) % SCALE_COUNT;
+                if (st.screenAuto) cur = -1;
+                cur = (cur + 1 + dir + NSIZES + 1) % (NSIZES + 1) - 1;
+                st.screenAuto = cur < 0;
+                if (cur >= 0) { st.screenW = sizes[cur][0]; st.screenH = sizes[cur][1]; }
+            } else if (sel == S_PHONE) st.phone = (st.phone + KP_COUNT + dir) % KP_COUNT;
+            else if (sel == S_SCALE) st.scale = (st.scale + SCALE_COUNT + dir) % SCALE_COUNT;
             else if (sel == S_FILTER) st.filter ^= 1;
             else if (sel == S_FPS) st.showFps ^= 1;
             else if (sel == S_VSYNC) st.vsync ^= 1;
@@ -391,7 +405,13 @@ static int settingsScreen(Game *g) {
         for (int i = top; i < nItems && i < top + 10; i++) {
             int y = 32 + (i - top) * 21;
             if (i == sel) gfx_fill_rect(&s, 6, y - 2, SCR_W - 12, 20, 0xff3060c0);
-            if (i == S_SIZE) snprintf(line, sizeof line, "Phone screen size:  < %d x %d >", st.screenW, st.screenH);
+            if (i == S_SIZE) {
+                if (st.screenAuto) snprintf(line, sizeof line, "Phone screen size:  < Auto: %d x %d >", gd.w, gd.h);
+                else snprintf(line, sizeof line, "Phone screen size:  < %d x %d >", st.screenW, st.screenH);
+            } else if (i == S_PHONE) {
+                if (st.phone == KP_AUTO) snprintf(line, sizeof line, "Phone type (key codes):  < Auto: %s >", kp_names[gd.keys]);
+                else snprintf(line, sizeof line, "Phone type (key codes):  < %s >", kp_names[st.phone]);
+            }
             else if (i == S_SCALE) snprintf(line, sizeof line, "Display mode:  < %s >", scale_name(st.scale));
             else if (i == S_FILTER) snprintf(line, sizeof line, "Smooth scaling:  %s", st.filter ? "On" : "Off");
             else if (i == S_FPS) snprintf(line, sizeof line, "Show FPS:  %s", st.showFps ? "On" : "Off");
@@ -404,7 +424,73 @@ static int settingsScreen(Game *g) {
             else snprintf(line, sizeof line, "Reset key bindings to defaults");
             ui_text(&s, 14, y, line, 0xffffffff, 1, 0);
         }
-        drawFooter(&s, "Left/Right: change    O: save and close    Triangle: close without saving");
+        char hint[160];
+        if (sel == S_SIZE && st.screenAuto) {
+            snprintf(hint, sizeof hint, "Auto: %s", gd.sizeFrom[0] ? gd.sizeFrom : "nothing found, using 240 x 320");
+            drawFooter(&s, hint);
+        } else if (sel == S_PHONE && st.phone == KP_AUTO) {
+            snprintf(hint, sizeof hint, "Auto: %s", gd.keysFrom);
+            drawFooter(&s, hint);
+        }
+        else drawFooter(&s, "Left/Right: change    O: save and close    Triangle: close without saving");
+        video_draw_launcher(canvas);
+    }
+}
+
+/* class of the game picked in a jar that holds several (empty = the first one) */
+static char chosenClass[256];
+const char *launcher_chosen_class(void) { return chosenClass; }
+
+/* "Name, icon, class" of MIDlet-n */
+static int midletEntry(const char *mf, int n, char *name, int nameLen, char *cls, int clsLen) {
+    char key[16], v[256];
+    snprintf(key, sizeof key, "MIDlet-%d", n);
+    if (!manifestValue(mf, key, v, sizeof v)) return 0;
+    char *c1 = strchr(v, ','), *c2 = c1 ? strchr(c1 + 1, ',') : NULL;
+    if (!c2) return 0;
+    *c1 = 0;
+    char *c = c2 + 1;
+    while (*c == ' ') c++;
+    snprintf(cls, clsLen, "%s", c);
+    for (char *e = cls + strlen(cls); e > cls && (e[-1] == ' ' || e[-1] == '\r'); ) *--e = 0;
+    char *nm = v;
+    while (*nm == ' ') nm++;
+    snprintf(name, nameLen, "%s", nm[0] ? nm : cls);
+    return 1;
+}
+
+/* lets the player choose one of the games in a jar; 0 = cancelled */
+static int pickMidlet(Surface *s, Game *g, int drawOnce) {
+    enum { MAXM = 20 };
+    char names[MAXM][64], classes[MAXM][160];
+    int n = 0;
+    Zip *z = zip_open_file_lazy(g->path);
+    ZipEntry *e = z ? zip_find(z, "META-INF/MANIFEST.MF") : NULL;
+    uint32_t len;
+    char *mf = e ? (char *)zip_read(z, e, &len) : NULL;
+    if (z) zip_close(z);
+    for (int i = 1; mf && i <= MAXM; i++) if (midletEntry(mf, i, names[n], 64, classes[n], 160)) n++; else break;
+    free(mf);
+    if (n <= 1) { chosenClass[0] = 0; return 1; }
+    int sel = 0;
+    prevB = 0xffffffff;
+    for (;;) {
+        unsigned p = drawOnce > 1 ? 0 : readPressed(NULL);
+        if (drawOnce) { if (drawOnce++ > 1) return 1; p = 0; }
+        if (p & PSP_CTRL_UP) sel = (sel + n - 1) % n;
+        if (p & PSP_CTRL_DOWN) sel = (sel + 1) % n;
+        if (p & PSP_CTRL_CROSS) { snprintf(chosenClass, sizeof chosenClass, "%s", classes[sel]); return 1; }
+        if (p & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE)) return 0;
+        int rows = n < 8 ? n : 8, w = 360, h = 44 + rows * 22, x = (SCR_W - w) / 2, y = (SCR_H - h) / 2;
+        int top = sel >= rows ? sel - rows + 1 : 0;
+        gfx_fill_rect(s, x, y, w, h, 0xf0202838);
+        gfx_rect(s, x, y, w - 1, h - 1, 0xff6080c0, 0);
+        ui_text(s, x + 10, y + 6, "This file has several games:", 0xffffffff, 1, 1);
+        for (int i = top; i < n && i < top + rows; i++) {
+            int yy = y + 32 + (i - top) * 22;
+            if (i == sel) gfx_fill_rect(s, x + 4, yy - 2, w - 8, 21, 0xff3060c0);
+            ui_text(s, x + 14, yy, names[i], 0xffffffff, 1, 0);
+        }
         video_draw_launcher(canvas);
     }
 }
@@ -463,6 +549,8 @@ int launcher_run(char *outJar, int outLen) {
                 top = sel > 2 ? sel - 2 : 0;
             }
             if (p & PSP_CTRL_CROSS) {
+                chosenClass[0] = 0;
+                if (games[sel].nMidlets > 1 && !pickMidlet(&s, &games[sel], 0)) { prevB = 0xffffffff; continue; }
                 if (outJar) recordPlay(&games[sel]);
                 snprintf(outJar, outLen, "%s", games[sel].path);
                 FILE *lf = fopen(lastPath, "w");
@@ -523,6 +611,7 @@ int launcher_run(char *outJar, int outLen) {
             ui_text(&s, 54, y + 2, g->name, 0xffffffff, 1, 1);
             char sub[300], when[40] = "";
             snprintf(sub, sizeof sub, "%s%s%s", g->vendor, g->vendor[0] ? "  -  " : "", g->file);
+            if (g->nMidlets > 1) snprintf(sub + strlen(sub), sizeof sub - strlen(sub), "  -  %d games", g->nMidlets);
             if ((sortMode == SORT_RECENT || sortMode == SORT_MOST) && g->plays) {
                 agoText(g->lastPlayed, when, sizeof when);
                 snprintf(sub + strlen(sub), sizeof sub - strlen(sub), "  -  played %d time%s, last %s", g->plays, g->plays == 1 ? "" : "s", when);
@@ -554,6 +643,8 @@ int launcher_run(char *outJar, int outLen) {
             sceIoDevctl("kemulator:", 0x20, NULL, 0, NULL, 0);
         }
         if (!outJar) { /* test mode: dump the launcher screen and stop */
+            extern int g_testPicker;
+            for (int i = 0; g_testPicker && i < nGames; i++) if (games[i].nMidlets > 1) { pickMidlet(&s, &games[i], 1); break; }
             char p[700];
             snprintf(p, sizeof p, "%s/shot_launcher.ppm", g_baseDir);
             FILE *f = fopen(p, "wb");

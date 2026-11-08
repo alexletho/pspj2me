@@ -53,6 +53,14 @@ void midp_request_exit(void) {
 }
 void midp_set_screen_size(int w, int h) { scrW = w; scrH = h; }
 void midp_set_full_canvas(int on) { fullCanvas = on; }
+static int keyProfile = 1;
+/* the phone the game was built for: key codes, and microedition.platform for non-Nokia builds */
+void midp_set_key_profile(int p) {
+    extern void lang_set_platform(const char *name);
+    static const char *const platforms[] = { "PSPJ2ME", "PSPJ2ME", "SIE-S65/50", "motorazrV3", "LG-KG800" };
+    keyProfile = p >= 1 && p <= 4 ? p : 1;
+    lang_set_platform(platforms[keyProfile]);
+}
 
 static int eventsPending(void) {
     int64_t now = vm_time_ms();
@@ -367,6 +375,7 @@ static int N_present(Thread *t, int32_t *a) {
 static int N_screenW(Thread *t, int32_t *a) { (void)t; a[0] = scrW; return NAT_OK; }
 static int N_screenH(Thread *t, int32_t *a) { (void)t; a[0] = scrH; return NAT_OK; }
 static int N_forceFull(Thread *t, int32_t *a) { (void)t; a[0] = fullCanvas; return NAT_OK; }
+static int N_keyProfile(Thread *t, int32_t *a) { (void)t; a[0] = keyProfile; return NAT_OK; }
 static int N_exit(Thread *t, int32_t *a) { (void)t; (void)a; g_vmExit = 1; return NAT_YIELD; }
 static int N_vibrate(Thread *t, int32_t *a) { (void)t; plat_vibrate(a[0]); return NAT_OK; }
 static int N_overlay(Thread *t, int32_t *a) { (void)t; plat_overlay_active(a[0]); return NAT_OK; }
@@ -656,6 +665,7 @@ void natives_midp_init(void) {
     R(N, "screenWidth", NULL, N_screenW);
     R(N, "screenHeight", NULL, N_screenH);
     R(N, "forceFullScreen", NULL, N_forceFull);
+    R(N, "keyProfile", NULL, N_keyProfile);
     R(N, "exit", NULL, N_exit);
     R(N, "getAppProperty", NULL, N_getAppProperty);
     R(N, "rmsRead", NULL, N_rmsRead);

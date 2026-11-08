@@ -41,6 +41,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--heap") && i + 1 < argc) heap = (size_t)atol(argv[++i]) * 1024 * 1024;
         else if (!strcmp(argv[i], "--final") && i + 1 < argc) final = argv[++i];
         else if (!strcmp(argv[i], "--repeat") && i + 1 < argc) repeat = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--phone") && i + 1 < argc) { extern void midp_set_key_profile(int); midp_set_key_profile(atoi(argv[++i])); }
         else app = argv[i];
     }
     size_t bootLen;

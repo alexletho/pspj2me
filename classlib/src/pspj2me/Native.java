@@ -13,6 +13,8 @@ public final class Native {
     public static native int screenWidth();
     public static native int screenHeight();
     public static native boolean forceFullScreen();
+    /** phone key-code profile of the running game (1 Nokia, 2 Siemens, 3 Motorola, 4 LG) */
+    public static native int keyProfile();
     public static native void exit();
     public static native String getAppProperty(String key);
     public static native byte[] rmsRead(String name);

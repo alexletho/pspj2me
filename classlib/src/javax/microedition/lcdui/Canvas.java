@@ -17,11 +17,11 @@ public abstract class Canvas extends Displayable {
 
     public int getKeyCode(int gameAction) {
         switch (gameAction) {
-            case UP: return -1;
-            case DOWN: return -2;
-            case LEFT: return -3;
-            case RIGHT: return -4;
-            case FIRE: return -5;
+            case UP: return KeyCodes.toGame(-1);
+            case DOWN: return KeyCodes.toGame(-2);
+            case LEFT: return KeyCodes.toGame(-3);
+            case RIGHT: return KeyCodes.toGame(-4);
+            case FIRE: return KeyCodes.toGame(-5);
             case GAME_A: return KEY_NUM1;
             case GAME_B: return KEY_NUM3;
             case GAME_C: return KEY_NUM7;
@@ -31,7 +31,9 @@ public abstract class Canvas extends Displayable {
     }
 
     public String getKeyName(int keyCode) {
-        switch (keyCode) {
+        int internal = KeyCodes.fromGame(keyCode);
+        if (keyCode < 0 && internal == 0) return "Key" + keyCode;
+        switch (internal) {
             case -1: return "Up";
             case -2: return "Down";
             case -3: return "Left";
@@ -49,7 +51,8 @@ public abstract class Canvas extends Displayable {
     }
 
     public int getGameAction(int keyCode) {
-        return gameActionOf(keyCode);
+        int internal = KeyCodes.fromGame(keyCode);
+        return internal == 0 ? 0 : gameActionOf(internal);   /* unknown codes: 0 (real phones rarely threw) */
     }
 
     static int gameActionOf(int keyCode) {
@@ -114,6 +117,7 @@ public abstract class Canvas extends Displayable {
     void keyEvent(int type, int code) {
         if (this instanceof javax.microedition.lcdui.game.GameCanvas
             && ((javax.microedition.lcdui.game.GameCanvas) this).pspj2me$keyState(type, code)) return;
+        code = KeyCodes.toGame(code);   /* the game sees its phone's key numbers */
         try {
             if (type == 1) keyPressed(code);
             else if (type == 2) keyReleased(code);

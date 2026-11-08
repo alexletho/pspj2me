@@ -121,7 +121,7 @@ public class Form extends Screen {
             if (f instanceof CustomItem) {
                 CustomItem ci = (CustomItem) f;
                 try {
-                    if (type == 1) ci.keyPressed(code); else ci.keyRepeated(code);
+                    if (type == 1) ci.keyPressed(KeyCodes.toGame(code)); else ci.keyRepeated(KeyCodes.toGame(code));
                 } catch (Throwable t) { pspj2me.Native.gameError(t); }
                 if (ga != Canvas.UP && ga != Canvas.DOWN) { Display.requestRepaint(); return; }
             } else if (f.key(ga, code)) { Display.requestRepaint(); return; }

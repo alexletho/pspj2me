@@ -139,8 +139,8 @@ void settings_defaults(Settings *s) {
     s->scale = SCALE_FIT;
     s->filter = 1;
     s->vsync = 0;
-    s->cpu333 = 1;
-    s->fullCanvas = 1;
+    s->screenAuto = 1;
+    s->phone = 0;   /* auto */
     s->sleepScale = 100;
     s->shoulderCombos = 1;
     /* D-pad = 2/4/6/8, stick = arrows, SELECT/START = soft keys, X=5, O=0, Square=*, Triangle=#, L=1, R=3 */
@@ -177,7 +177,7 @@ void settings_load(Settings *s, const char *path) {
     FILE *f = fopen(path, "r");
     if (!f) return;
     char line[256];
-    int keys[B_COUNT], haveKeys = 0, keyVer = 0;
+    int keys[B_COUNT], haveKeys = 0, keyVer = 0, haveScreen = 0, haveAuto = 0;
     memcpy(keys, s->keys, sizeof keys);
     while (fgets(line, sizeof line, f)) {
         char *eq = strchr(line, '=');
@@ -185,13 +185,13 @@ void settings_load(Settings *s, const char *path) {
         *eq = 0;
         char *k = line, *v = eq + 1;
         v[strcspn(v, "\r\n")] = 0;
-        if (!strcmp(k, "screen")) sscanf(v, "%dx%d", &s->screenW, &s->screenH);
+        if (!strcmp(k, "screen")) { sscanf(v, "%dx%d", &s->screenW, &s->screenH); haveScreen = 1; }
         else if (!strcmp(k, "scale")) s->scale = atoi(v);
         else if (!strcmp(k, "filter")) s->filter = atoi(v);
         else if (!strcmp(k, "fps")) s->showFps = atoi(v);
         else if (!strcmp(k, "vsync")) s->vsync = atoi(v);
-        else if (!strcmp(k, "cpu333")) s->cpu333 = atoi(v);
-        else if (!strcmp(k, "fullcanvas")) s->fullCanvas = atoi(v);
+        else if (!strcmp(k, "screenauto")) { s->screenAuto = atoi(v); haveAuto = 1; }
+        else if (!strcmp(k, "phone")) s->phone = atoi(v);
         else if (!strcmp(k, "sleepscale")) s->sleepScale = atoi(v);
         else if (!strcmp(k, "shoulders")) s->shoulderCombos = atoi(v);
         else if (!strcmp(k, "keyver")) keyVer = atoi(v);
@@ -203,6 +203,8 @@ void settings_load(Settings *s, const char *path) {
         }
     }
     fclose(f);
+    /* files from before 1.6 have a screen size but no "screenauto": keep the size the player chose */
+    if (haveScreen && !haveAuto) s->screenAuto = 0;
     /* key layouts saved by older versions (different defaults) are ignored */
     if (haveKeys && keyVer == 2) memcpy(s->keys, keys, sizeof keys);
     if (s->scale >= SCALE_COUNT) s->scale = SCALE_FIT;
@@ -210,14 +212,16 @@ void settings_load(Settings *s, const char *path) {
     if (s->screenH < 64 || s->screenH > 512) s->screenH = 320;
     if (s->scale < 0 || s->scale >= SCALE_COUNT) s->scale = SCALE_FIT;  /* removed modes (rotate, 1:1) -> Fit */
     s->filter = !!s->filter; s->showFps = !!s->showFps; s->vsync = !!s->vsync;
-    s->cpu333 = !!s->cpu333; s->shoulderCombos = !!s->shoulderCombos;
+    s->shoulderCombos = !!s->shoulderCombos; s->screenAuto = !!s->screenAuto;
+    if (s->phone < 0 || s->phone >= KP_COUNT) s->phone = 0;
     if (s->sleepScale < 10 || s->sleepScale > 100) s->sleepScale = 100;
 }
 
 void settings_save(const Settings *s, const char *path) {
     FILE *f = fopen(path, "w");
     if (!f) return;
-    fprintf(f, "keyver=2\nscreen=%dx%d\nscale=%d\nfilter=%d\nfps=%d\nvsync=%d\ncpu333=%d\nfullcanvas=%d\nsleepscale=%d\nshoulders=%d\n", s->screenW, s->screenH, s->scale, s->filter, s->showFps, s->vsync, s->cpu333, s->fullCanvas, s->sleepScale, s->shoulderCombos);
+    fprintf(f, "keyver=2\nscreen=%dx%d\nscreenauto=%d\nphone=%d\nscale=%d\nfilter=%d\nfps=%d\nvsync=%d\nsleepscale=%d\nshoulders=%d\n",
+            s->screenW, s->screenH, s->screenAuto, s->phone, s->scale, s->filter, s->showFps, s->vsync, s->sleepScale, s->shoulderCombos);
     for (int b = 0; b < B_COUNT; b++) fprintf(f, "key.%s=%d\n", btnKeys[b], s->keys[b]);
     fclose(f);
 }
@@ -709,6 +713,7 @@ static int testMode;
 static char tMain[128];
 static int tRelaunch;
 static int tThenLauncher;
+int g_testPicker;   /* launcher test: also draw the game picker of the first jar with several games */
 static int tControls;
 static char tJar[600];
 static uint32_t *lastFrame;
@@ -744,6 +749,13 @@ static int loadTestConfig(char *jar, int jarLen, int *launcherOnly) {
     snprintf(path, sizeof path, "%s/autostart.txt", g_baseDir);
     FILE *f = fopen(path, "r");
     if (!f) return 0;
+    /* developer file for automated tests in PPSSPP: never start a game by itself on a real PSP */
+    int isEmu = 0;
+    if (sceIoDevctl("kemulator:", 3 /* IS_EMULATOR */, NULL, 0, &isEmu, sizeof isEmu) < 0 || !isEmu) {
+        fclose(f);
+        vm_log("ignoring %s (developer test file, only used in the PPSSPP emulator; you can delete it)\n", path);
+        return 0;
+    }
     char line[1024];
     *launcherOnly = 0;
     jar[0] = 0;
@@ -758,6 +770,7 @@ static int loadTestConfig(char *jar, int jarLen, int *launcherOnly) {
         else if (!strcmp(line, "main")) snprintf(tMain, sizeof tMain, "%s", v);
         else if (!strcmp(line, "relaunch")) tRelaunch = atoi(v);
         else if (!strcmp(line, "thenlauncher")) tThenLauncher = atoi(v);
+        else if (!strcmp(line, "picker")) g_testPicker = atoi(v);
         else if (!strcmp(line, "controls")) tControls = atoi(v);
         else if (!strcmp(line, "quit")) tQuit = tQuitOrig = atoi(v);
         else if (!strcmp(line, "shots")) {
@@ -1001,7 +1014,7 @@ int main(int argc, char **argv) {
     snprintf(globalCfg, sizeof globalCfg, "%s/settings.ini", dataDir);
     settings_defaults(&g_settings);
     settings_load(&g_settings, globalCfg);
-    if (g_settings.cpu333) scePowerSetClockFrequency(333, 333, 166);
+    scePowerSetClockFrequency(333, 333, 166);   /* every PSP model runs at 333 MHz */
     vm_log("CPU clock %d MHz, bus %d MHz\n", scePowerGetCpuClockFrequency(), scePowerGetBusClockFrequency());
 
     video_init();
@@ -1029,6 +1042,25 @@ int main(int argc, char **argv) {
         baseName(jar, bn, sizeof bn);
         snprintf(gameCfgPath, sizeof gameCfgPath, "%s/%s.ini", dataDir, bn);
         settings_load(&g_settings, gameCfgPath);
+        {
+            /* the phone this build was made for: screen size and key codes */
+            int phone = g_settings.phone;
+            if (g_settings.screenAuto || phone == KP_AUTO) {
+                GameDetect gd;
+                detect_game(jar, &gd);
+                if (g_settings.screenAuto) {
+                    if (gd.w) { g_settings.screenW = gd.w; g_settings.screenH = gd.h; }
+                    else { g_settings.screenW = 240; g_settings.screenH = 320; snprintf(gd.sizeFrom, sizeof gd.sizeFrom, "nothing found, using the default"); }
+                    vm_log("screen size %dx%d chosen automatically (%s)\n", g_settings.screenW, g_settings.screenH, gd.sizeFrom);
+                }
+                if (phone == KP_AUTO) {
+                    phone = gd.keys;
+                    vm_log("phone keys: %s (chosen automatically: %s)\n", kp_names[phone], gd.keysFrom);
+                }
+            } else vm_log("phone keys: %s\n", kp_names[phone]);
+            extern void midp_set_key_profile(int);
+            midp_set_key_profile(phone);
+        }
         midp_set_screen_size(g_settings.screenW, g_settings.screenH);
         extern void midp_set_full_canvas(int);
         midp_set_full_canvas(1);
@@ -1070,7 +1102,9 @@ int main(int argc, char **argv) {
                 g_lastPresentMs = plat_time_ms();
                 g_framesPresented = 0;
                 vmRunning = 1;
-                rc = midp_launch(jar, NULL);
+                extern const char *launcher_chosen_class(void);
+                const char *cls = launcher_chosen_class();
+                rc = midp_launch(jar, cls[0] ? cls : NULL);
             }
         }
         g_fatalJmp = NULL;

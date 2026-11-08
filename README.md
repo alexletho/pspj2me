@@ -59,14 +59,22 @@ game list.
 
 <p align="center"><img src="docs/controls.png" alt="Controls panel" width="400"></p>
 
+If a .jar contains several games (compilations), ✕ asks which one to start.
+
 **In the game list:** ✕ play · △ game settings · □ delete a game · SELECT show controls ·
 START change the sort order (name, recently played, most played, recently added) · HOME quit.
 
 ## Per-game settings (△ in the game list)
 
-* **Phone screen size**: 240×320 by default. Older games often want 176×208/176×220 or 128×160.
-  "Multiscreen"/"allscreen" games adapt to the size you choose; for those try **480×272** (the PSP's
-  own resolution, perfectly sharp) or 320×240 / 400×240.
+* **Phone screen size**: **Auto** by default. J2ME games were released as one version per phone
+  model, and PSPJ2ME works out which screen the version was made for from the file name
+  (`Game_240x320.jar`, `Game_N73.jar`, `Game_K750i.jar`), the game's JAD/manifest, or its full-screen
+  images. If nothing is found it uses 240×320. You can also pick a size yourself; "multiscreen" games
+  adapt to any size, so for those try **480×272** (the PSP's own resolution, perfectly sharp).
+* **Phone type (key codes)**: **Auto** by default. Phone makers used different key numbers for the
+  arrows and soft keys; a version made for a Siemens, Motorola or LG phone needs that phone's numbers
+  or it won't react to some keys. Auto recognises the maker from the file name or from the phone
+  APIs the game uses; otherwise it uses Nokia / Sony Ericsson / Samsung numbers.
 * **Display mode**: **Fit** (keeps the shape, black bars at the sides) or **Stretch** (fills the screen).
 * **Smooth scaling**: bilinear filtering on/off.
 * **Speed-up**: many J2ME games cap their own frame rate. This shortens the game's sleeps
@@ -94,14 +102,21 @@ Supported:
 * Nokia `Sound`: WAV, Nokia ringtones (`FORMAT_TONE`) and beeps
 * Latin and Cyrillic text in the built-in fonts
 
-Not supported (yet):
+PSPJ2ME is made for **2D games from keypad ("button") phones**. These are **not supported and not
+planned**:
 
-* AMR-WB (wideband) and Yamaha SMAF (.mmf) audio, video playback (games continue silently)
-* 3D games (M3G / JSR-184), Bluetooth, networking (games see "no connection")
-* Vendor-specific APIs other than Nokia (Siemens, Samsung, Motorola, …)
+* 3D games (M3G / JSR-184, MascotCapsule)
+* Touch-screen-only games (games made for touch phones that can't be played with keys)
+* Bluetooth and network features: multiplayer, online scores, "buy the full version" by SMS/web.
+  Games are told there is no connection and carry on without it.
+* A JIT compiler: most 2D games already run at their intended speed; very heavy games may run
+  slower than on the original phone
 
-Performance: there is no JIT. Most 2D games run at their intended speed; very heavy games may be
-slower than on the original phone.
+Not supported at the moment (games run, the feature is just missing):
+
+* AMR-WB (wideband) and Yamaha SMAF (`.mmf`) sound, and video: the game plays without that sound
+* Extra APIs of other phone makers (Siemens, Samsung, Motorola, …): such games stop with a message
+  that names the missing API. Please report them, so the most common ones can be added.
 
 ## Troubleshooting
 
@@ -138,7 +153,7 @@ package and attaches it to the release automatically.
 The host runner `build/j2me_host` runs the same VM and phone APIs on Linux (no window) and is used
 for testing: `./build/j2me_host game.jar --quit 5000 --final shot.ppm`, scripted keys with
 `--keys "1000:fire,1500:down"`. `tests/ppsspp_run.sh` runs the EBOOT inside PPSSPP's headless
-build using a developer `autostart.txt` (don't copy that file to a real PSP).
+build using a developer `autostart.txt` (only honoured inside PPSSPP; a real PSP ignores it).
 
 ### How it works
 

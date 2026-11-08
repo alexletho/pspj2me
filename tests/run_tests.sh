@@ -16,6 +16,19 @@ for M in GfxTest GameTest UiTest SerialTest SwitchTest SoundTest; do
   if grep -q "Uncaught exception\|FATAL\|missing native\|PAINT BEFORE" shots/$M.log; then echo "$M: FAILED"; cat shots/$M.log; exit 1; fi
   echo "$M: ok ($(grep -c . shots/$M.log) log lines)"
 done
+# phone key profiles: what a game receives for up / soft1 / fire / soft2 / right
+KEYS="300:up,400:soft1,500:fire,600:soft2,700:right"
+for P in "1:-1 -6 -5 -7 -4" "2:-59 -1 -26 -4 -62" "3:-1 -21 -20 -22 -5" "4:-1 -202 -5 -203 -4"; do
+  N=${P%%:*}; WANT=${P#*:}
+  GOT=$(timeout 30 ./build/j2me_host --phone $N --quit 1500 --keys "$KEYS" tests/midlets/jars/KeyTest.jar 2>&1 | grep "KeyTest key" | awk '{print $3}' | tr '\n' ' ' | sed 's/ $//')
+  [ "$GOT" = "$WANT" ] || { echo "KeyTest phone $N: got '$GOT', expected '$WANT'"; exit 1; }
+done
+echo "KeyTest: key codes of 4 phone types ok"
+# game build detection (screen size, phone type)
+python3 tests/detect/make_jars.py build/detect
+gcc -Wall -O1 -Isrc/platform -o build/detect_test tests/detect/detect_test.c src/platform/detect.c src/vm/zip.c
+./build/detect_test build/detect > build/detect_test.log || { cat build/detect_test.log; echo "detect test FAILED"; exit 1; }
+tail -1 build/detect_test.log
 # game saves: the second start must find what the first one saved
 RMSDATA=$(mktemp -d)
 for P in 1 2; do

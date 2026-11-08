@@ -4,7 +4,7 @@ set -e
 cd "$(dirname "$0")"
 rm -rf out && mkdir -p out/classes jars
 javac -nowarn -source 8 -target 8 -Xlint:-options -bootclasspath ../../build/classes -d out/classes src/*.java
-for M in GfxTest GameTest UiTest SerialTest SwitchTest SoundTest AudioTest RmsTest Bench; do
+for M in GfxTest GameTest UiTest SerialTest SwitchTest SoundTest AudioTest RmsTest KeyTest Bench; do
   rm -rf out/$M && mkdir -p out/$M/META-INF
   cp out/classes/$M*.class out/$M/
   cp res/* out/$M/
