@@ -23,6 +23,8 @@ synthesizer, and a PSP front-end with a game browser.
 **Requirements:** a PSP with custom firmware or a HEN that runs homebrew (any model; PSP-2000/3000/Go
 get ~40 MB of memory for games, PSP-1000 ~10 MB). No games are included; use games you own.
 
+**Tested on:** a PSP-3004 with firmware 6.61 and the PRO-C custom firmware.
+
 > Tip: copy files with a card reader or USB mode, and eject the memory stick properly before
 > removing it. macOS's hidden `._` files are ignored automatically.
 
