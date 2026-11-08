@@ -7,6 +7,8 @@
 #include <string.h>
 #include <math.h>
 
+#define MASTER_GAIN 2.0f   /* +6 dB over the plain sum of all sounds */
+
 static void nolock(void) {}
 static void (*lockFn)(void) = nolock, (*unlockFn)(void) = nolock;
 
@@ -584,7 +586,7 @@ static inline float voiceSample(Voice *v) {
  * release tails) ended, or before songUs reached stopUs (stopUs < 0: no stop time) */
 static int synthRender(Synth *s, int32_t *acc, int frames, int volume, double usPerSample, double stopUs, int *stopped) {
     Midi *m = s->midi;
-    float master = volume / 100.0f * 8000.0f;
+    float master = volume / 100.0f * 12000.0f;
     for (int f = 0; f < frames; f++) {
         if (stopUs >= 0 && s->songUs >= stopUs) { *stopped = 1; return f; }
         while (s->pos < m->nEv && m->ev[s->pos].us <= s->songUs) processEvent(s, &m->ev[s->pos++]);
@@ -606,10 +608,8 @@ static int synthRender(Synth *s, int32_t *acc, int frames, int volume, double us
             l += x * v->lgain;
             r += x * v->rgain;
         }
-        /* soft limiter keeps dense chords from clipping harshly */
+        /* dense chords are kept from clipping by the limiter in mix_render */
         l *= master; r *= master;
-        if (l > 24000 || l < -24000) l = (l > 0 ? 1 : -1) * (24000 + (fabsf(l) - 24000) * 0.25f);
-        if (r > 24000 || r < -24000) r = (r > 0 ? 1 : -1) * (24000 + (fabsf(r) - 24000) * 0.25f);
         acc[f * 2] += (int32_t)l;
         acc[f * 2 + 1] += (int32_t)r;
     }
@@ -1290,10 +1290,20 @@ void mix_render(int16_t *out, int frames) {
         }
     }
     unlockFn();
-    for (int i = 0; i < frames * 2; i++) {
-        int32_t v = acc[i];
-        if (v > 32767) v = 32767;
-        if (v < -32768) v = -32768;
-        out[i] = (int16_t)v;
+    /* master gain plus a peak limiter: phone speakers were loud and games mixed for them, so
+     * everything is raised by MASTER_GAIN; peaks that would clip are turned down at once and the
+     * gain recovers over ~0.1 s, instead of the harsh distortion of plain clipping. */
+    static float env = 1.0f;
+    const float thresh = 32000.0f, release = 1.0f / (0.1f * MIX_RATE);
+    for (int f = 0; f < frames; f++) {
+        float l = acc[f * 2] * MASTER_GAIN, r = acc[f * 2 + 1] * MASTER_GAIN;
+        float pk = fabsf(l) > fabsf(r) ? fabsf(l) : fabsf(r);
+        float need = pk > thresh ? thresh / pk : 1.0f;
+        if (need < env) env = need;
+        else env += (1.0f - env) * release;
+        l *= env; r *= env;
+        int32_t a = (int32_t)l, b = (int32_t)r;
+        out[f * 2] = (int16_t)(a > 32767 ? 32767 : a < -32768 ? -32768 : a);
+        out[f * 2 + 1] = (int16_t)(b > 32767 ? 32767 : b < -32768 ? -32768 : b);
     }
 }
